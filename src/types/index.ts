@@ -1,0 +1,119 @@
+export type Species = 'dog' | 'cat' | 'rabbit' | 'small' | 'other';
+export type PetStatus = 'healthy' | 'due_for_vaccine' | 'overdue' | 'warning';
+export type Gender = 'male' | 'female';
+
+export interface Pet {
+  id: string;
+  name: string;
+  species: Species;
+  breed: string;
+  age: number;
+  weightKg: number;
+  heightCm: number;
+  gender: Gender;
+  photoUrl?: string;
+  traits: string[];
+  status: PetStatus;
+  statusLabel: string;
+  nextEvent?: string;
+  weightGoalPercent?: number;
+  birthday?: string;   // ISO date string
+  joinedAt?: string;   // ISO date string (createdAt)
+  careTargets?: { label: string; target: string; category: string }[];
+}
+
+
+export interface User {
+  id: string;
+  name: string;
+  email: string;
+  avatarUrl?: string;
+  lastNameChangedAt?: string; // ISO date string, enforces 14-day cooldown
+}
+
+export interface Post {
+  id: string;
+  author: string;
+  authorAvatarUrl?: string;
+  content: string;
+  imageUrl?: string;
+  images?: string[];
+  hashtags: string[];
+  withPets?: string[];
+  likes: number;
+  comments: number;
+  timeAgo: string;
+  isLiked?: boolean;
+  createdAt?: string;
+}
+
+export interface CalendarEvent {
+  id: string;
+  title: string;
+  description: string;
+  time: string;        // 'HH:MM AM/PM', or '' when allDay is true
+  allDay: boolean;
+  category: 'vet' | 'medication' | 'grooming' | 'activity' | 'other';
+  petId: string;       // pet id, or 'all' for all pets
+  done: boolean;
+  date: string;        // YYYY-MM-DD
+  repeat: 'none' | 'daily' | 'weekly' | 'monthly';
+  recurringId?: string; // shared across recurring group
+}
+
+export interface Notification {
+  id: string;
+  type: 'like' | 'comment' | 'health_reminder' | 'milestone' | 'lost_pet';
+  title: string;
+  body: string;
+  read: boolean;
+  timeAgo: string;
+  day: 'today' | 'yesterday' | 'earlier';
+  data?: Record<string, string>;
+}
+
+export interface AiMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  imageUrl?: string;
+  petName?: string;
+  timestamp: string;
+}
+
+export interface Conversation {
+  id: string;
+  title: string;
+  createdAt: string;
+  messages: AiMessage[];
+}
+
+export interface ApiResponse<T> {
+  success: boolean;
+  data: T;
+  message: string;
+}
+
+export interface DiaryPhoto {
+  url: string;
+  time: string; // e.g. "10:24 AM"
+}
+
+export interface WeightLog {
+  id: string;
+  weightKg: number;
+  recordedAt: string; // ISO date string
+}
+
+export interface DiaryEntry {
+  id: string;
+  petId: string;
+  date: string; // YYYY-MM-DD
+  photoUrl: string; // primary thumbnail (backwards compat)
+  photos?: DiaryPhoto[];
+  title?: string;
+  note?: string;
+  mood?: string[]; // mood identifiers e.g. ['happy','playful']
+  hashtags?: string[];
+  entryNumber?: number;
+}
