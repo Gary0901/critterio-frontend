@@ -16,15 +16,10 @@ const statusConfig: Record<PetStatus, { bg: string; text: string; icon: keyof ty
     text: Colors.onSecondaryContainer,
     icon: 'check-circle',
   },
-  due_for_vaccine: {
+  due_soon: {
     bg: Colors.errorContainer,
     text: Colors.onErrorContainer,
-    icon: 'vaccines',
-  },
-  overdue: {
-    bg: Colors.errorContainer,
-    text: Colors.onErrorContainer,
-    icon: 'warning',
+    icon: 'event-repeat',
   },
   warning: {
     bg: Colors.primaryFixed,

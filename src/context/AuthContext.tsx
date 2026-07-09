@@ -8,6 +8,7 @@ interface AuthContextValue {
   isLoading: boolean;
   login: (email: string, password: string) => Promise<void>;
   register: (name: string, email: string, password: string) => Promise<void>;
+  loginWithGoogle: (idToken: string) => Promise<void>;
   logout: () => Promise<void>;
   updateUser: (fields: Partial<User>) => void;
 }
@@ -15,11 +16,20 @@ interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue>({} as AuthContextValue);
 
 function mapUser(u: any): User {
+  const ns = u.notifSettings;
   return {
     id: u._id || u.id,
     name: u.profile?.name || u.name || '',
     email: u.email,
     avatarUrl: u.profile?.avatarUrl ?? u.avatarUrl ?? undefined,
+    lastNameChangedAt: u.lastNameChangedAt ?? undefined,
+    defaultPostVisibility: u.defaultPostVisibility ?? 'public',
+    notifSettings: {
+      dailyCare: ns?.dailyCare !== false,
+      calendar:  ns?.calendar  !== false,
+      likes:     ns?.likes     !== false,
+      comments:  ns?.comments  !== false,
+    },
   };
 }
 
@@ -61,6 +71,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(mapUser(u));
   }
 
+  async function loginWithGoogle(idToken: string) {
+    const res = await client.post('/auth/google', { idToken });
+    if (!res.data.success) throw new Error(res.data.message);
+    const { token, user: u } = res.data.data;
+    await SecureStore.setItemAsync(TOKEN_KEY, token);
+    setUser(mapUser(u));
+  }
+
   async function logout() {
     try { await client.post('/auth/logout'); } catch {}
     await SecureStore.deleteItemAsync(TOKEN_KEY);
@@ -72,7 +90,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, login, register, logout, updateUser }}>
+    <AuthContext.Provider value={{ user, isLoading, login, register, loginWithGoogle, logout, updateUser }}>
       {children}
     </AuthContext.Provider>
   );

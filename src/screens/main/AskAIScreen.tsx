@@ -11,6 +11,7 @@ import {
   ActivityIndicator,
   Image,
   Animated,
+  Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -237,6 +238,9 @@ export default function AskAIScreen() {
                   : c.messages.map((m) => m.id === streamingId ? { ...m, content: msg } : m),
               } : c),
             );
+          },
+          onImageAttachFailed: () => {
+            Alert.alert('圖片無法附加', '照片讀取失敗，已改為僅傳送文字訊息。');
           },
         },
         imageForSend,

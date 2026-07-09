@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -9,12 +9,19 @@ import {
   Platform,
 } from 'react-native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import * as Google from 'expo-auth-session/providers/google';
+import * as WebBrowser from 'expo-web-browser';
+import Constants from 'expo-constants';
 import { RootStackParamList } from '../../types/navigation';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
 import { Colors } from '../../constants/colors';
 import { FontFamily, FontSize } from '../../constants/typography';
 import { useAuth } from '../../context/AuthContext';
+
+WebBrowser.maybeCompleteAuthSession();
+
+const googleExtra = (Constants.expoConfig?.extra as any)?.google ?? {};
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -23,11 +30,33 @@ type Props = {
 };
 
 export default function LoginScreen({ navigation }: Props) {
-  const { login } = useAuth();
+  const { login, loginWithGoogle } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState('');
+
+  const [googleRequest, googleResponse, promptGoogleAsync] = Google.useAuthRequest({
+    iosClientId: googleExtra.iosClientId,
+    androidClientId: googleExtra.androidClientId,
+    webClientId: googleExtra.webClientId,
+  });
+
+  useEffect(() => {
+    if (googleResponse?.type === 'success') {
+      const idToken = googleResponse.params?.id_token;
+      if (!idToken) return;
+      setGoogleLoading(true);
+      setError('');
+      loginWithGoogle(idToken)
+        .then(() => navigation.reset({ index: 0, routes: [{ name: 'MainTabs' }] }))
+        .catch((e: any) => setError(e?.response?.data?.message || e?.message || 'Google 登入失敗，請再試一次。'))
+        .finally(() => setGoogleLoading(false));
+    } else if (googleResponse?.type === 'error') {
+      setError('Google 登入失敗，請再試一次。');
+    }
+  }, [googleResponse]);
 
   const handleLogin = async () => {
     if (!email || !password) {
@@ -98,11 +127,14 @@ export default function LoginScreen({ navigation }: Props) {
           <Button
             label="使用 Google 繼續"
             variant="outline"
-            onPress={() => {}}
+            loading={googleLoading}
+            disabled={!googleRequest}
+            onPress={() => promptGoogleAsync()}
           />
           <Button
-            label="使用 Apple 繼續"
+            label="使用 Apple 繼續（即將推出）"
             variant="outline"
+            disabled
             onPress={() => {}}
           />
         </View>

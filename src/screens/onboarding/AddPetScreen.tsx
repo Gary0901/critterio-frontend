@@ -8,8 +8,8 @@ import {
   KeyboardAvoidingView,
   Platform,
   TextInput,
-  Dimensions,
   Image,
+  Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -34,23 +34,24 @@ type SpeciesItem = {
   icon: React.ComponentProps<typeof MaterialCommunityIcons>['name'];
 };
 
-const { width } = Dimensions.get('window');
-const CHIP_W = Math.floor((width - 40 - 16) / 3);
-
 const SPECIES_LIST: SpeciesItem[] = [
-  { value: 'dog',    label: '狗',     icon: 'dog' },
-  { value: 'cat',    label: '貓',     icon: 'cat' },
-  { value: 'rabbit', label: '兔子',   icon: 'rabbit' },
-  { value: 'small',  label: '小動物', icon: 'rodent' },
-  { value: 'other',  label: '其他',   icon: 'paw' },
+  { value: 'dog',     label: '狗',     icon: 'dog' },
+  { value: 'cat',     label: '貓',     icon: 'cat' },
+  { value: 'rabbit',  label: '兔子',   icon: 'rabbit' },
+  { value: 'small',   label: '小動物', icon: 'rodent' },
+  { value: 'bird',    label: '鳥類',   icon: 'bird' },
+  { value: 'reptile', label: '爬蟲類', icon: 'turtle' },
+  { value: 'other',   label: '其他',   icon: 'paw' },
 ];
 
 const BREEDS: Record<Species, string[]> = {
-  dog:    ['黃金獵犬', '拉布拉多', '貴賓犬', '米格魯', '西施犬', '柯基', '哈士奇', '雪納瑞', '吉娃娃', '法鬥'],
-  cat:    ['波斯貓', '暹羅貓', '緬因貓', '布偶貓', '英國短毛貓', '蘇格蘭折耳', '孟加拉貓', '美國短毛貓'],
-  rabbit: ['迷你垂耳兔', '迷你雷克斯', '獅子兔', '雷克斯兔', '安哥拉兔'],
-  small:  ['天竺鼠', '倉鼠', '龍貓', '雪貂', '沙鼠'],
-  other:  [],
+  dog:     ['黃金獵犬', '拉布拉多', '貴賓犬', '米格魯', '西施犬', '柯基', '哈士奇', '雪納瑞', '吉娃娃', '法鬥'],
+  cat:     ['波斯貓', '暹羅貓', '緬因貓', '布偶貓', '英國短毛貓', '蘇格蘭折耳', '孟加拉貓', '美國短毛貓'],
+  rabbit:  ['迷你垂耳兔', '迷你雷克斯', '獅子兔', '雷克斯兔', '安哥拉兔'],
+  small:   ['天竺鼠', '倉鼠', '龍貓', '雪貂', '沙鼠'],
+  bird:    ['玄鳳鸚鵡', '虎皮鸚鵡', '鳳頭鸚鵡', '風信子金剛鸚鵡', '愛情鳥', '折衷鸚鵡', '綠頰錐尾鸚鵡', '金絲雀', '哈恩金剛鸚鵡', '斑胸草雀'],
+  reptile: ['烏龜', '豹紋守宮', '肥尾守宮', '鬆獅蜥', '變色龍', '玉米蛇', '球蟒', '藍舌蜥'],
+  other:   [],
 };
 
 export default function AddPetScreen({ navigation }: Props) {
@@ -61,6 +62,7 @@ export default function AddPetScreen({ navigation }: Props) {
   const [species, setSpecies]     = useState<Species>('dog');
   const [breed, setBreed]         = useState('');
   const [weightKg, setWeightKg]   = useState('');
+  const [weightUnit, setWeightUnit] = useState<'kg' | 'g'>('kg');
   const [birthYear, setBirthYear] = useState('');
   const [birthMonth, setBirthMonth] = useState('');
   const [birthDay, setBirthDay]   = useState('');
@@ -77,7 +79,6 @@ export default function AddPetScreen({ navigation }: Props) {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
       allowsEditing: true,
-      aspect: [1, 1],
       quality: 0.8,
     });
     if (!result.canceled) setPhotoUri(result.assets[0].uri);
@@ -86,10 +87,37 @@ export default function AddPetScreen({ navigation }: Props) {
   const handleSpeciesChange = (s: Species) => {
     setSpecies(s);
     setBreed('');
+    if (!weightKg.trim()) {
+      setWeightUnit(s === 'bird' || s === 'reptile' || s === 'small' ? 'g' : 'kg');
+    }
+  };
+
+  const toggleWeightUnit = () => {
+    setWeightUnit((prevUnit) => {
+      const nextUnit = prevUnit === 'kg' ? 'g' : 'kg';
+      const current = parseFloat(weightKg);
+      if (!isNaN(current)) {
+        setWeightKg(
+          nextUnit === 'g' ? String(Math.round(current * 1000)) : String(Math.round((current / 1000) * 1000) / 1000)
+        );
+      }
+      return nextUnit;
+    });
   };
 
   const handleSubmit = async () => {
     if (!name.trim()) return;
+    const enteredWeight = parseFloat(weightKg);
+    const weightInKg = weightUnit === 'g' ? enteredWeight / 1000 : enteredWeight;
+    if (weightKg.trim() !== '') {
+      if (isNaN(weightInKg) || weightInKg < 0.01 || weightInKg > 200) {
+        Alert.alert(
+          '體重範圍錯誤',
+          weightUnit === 'g' ? '請輸入 10–200000 g 的合理數值' : '請輸入 0.01–200 kg 的合理數值'
+        );
+        return;
+      }
+    }
     setLoading(true);
     try {
       const formData = new FormData();
@@ -105,7 +133,7 @@ export default function AddPetScreen({ navigation }: Props) {
         formData.append('joinedFamilyAt', joinedFamilyAt);
       }
       formData.append('gender', gender);
-      formData.append('weight', String(parseFloat(weightKg) || 0));
+      formData.append('weight', String(weightInKg || 0));
       if (photoUri) {
         const filename = photoUri.split('/').pop() ?? 'photo.jpg';
         const ext = filename.split('.').pop()?.toLowerCase() ?? 'jpg';
@@ -198,52 +226,32 @@ export default function AddPetScreen({ navigation }: Props) {
         {/* ── Species ── */}
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>物種</Text>
-          <View style={styles.speciesGrid}>
-            <View style={styles.speciesRow}>
-              {SPECIES_LIST.slice(0, 3).map((s) => {
-                const active = species === s.value;
-                return (
-                  <TouchableOpacity
-                    key={s.value}
-                    style={[styles.speciesChip, active && styles.speciesChipActive, { width: CHIP_W }]}
-                    onPress={() => handleSpeciesChange(s.value)}
-                    activeOpacity={0.75}
-                  >
-                    <MaterialCommunityIcons
-                      name={s.icon}
-                      size={28}
-                      color={active ? Colors.primary : Colors.onSurfaceVariant}
-                    />
-                    <Text style={[styles.speciesLabel, active && styles.speciesLabelActive]}>
-                      {s.label}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-            <View style={[styles.speciesRow, { justifyContent: 'center' }]}>
-              {SPECIES_LIST.slice(3).map((s) => {
-                const active = species === s.value;
-                return (
-                  <TouchableOpacity
-                    key={s.value}
-                    style={[styles.speciesChip, active && styles.speciesChipActive, { width: CHIP_W }]}
-                    onPress={() => handleSpeciesChange(s.value)}
-                    activeOpacity={0.75}
-                  >
-                    <MaterialCommunityIcons
-                      name={s.icon}
-                      size={28}
-                      color={active ? Colors.primary : Colors.onSurfaceVariant}
-                    />
-                    <Text style={[styles.speciesLabel, active && styles.speciesLabelActive]}>
-                      {s.label}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          </View>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.speciesScroll}
+          >
+            {SPECIES_LIST.map((s) => {
+              const active = species === s.value;
+              return (
+                <TouchableOpacity
+                  key={s.value}
+                  style={[styles.speciesChip, active && styles.speciesChipActive]}
+                  onPress={() => handleSpeciesChange(s.value)}
+                  activeOpacity={0.75}
+                >
+                  <MaterialCommunityIcons
+                    name={s.icon}
+                    size={28}
+                    color={active ? Colors.primary : Colors.onSurfaceVariant}
+                  />
+                  <Text style={[styles.speciesLabel, active && styles.speciesLabelActive]}>
+                    {s.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
         </View>
 
         {/* ── Breed ── */}
@@ -295,7 +303,9 @@ export default function AddPetScreen({ navigation }: Props) {
               value={weightKg}
               onChangeText={setWeightKg}
             />
-            <Text style={styles.inputSuffix}>kg</Text>
+            <TouchableOpacity onPress={toggleWeightUnit} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Text style={[styles.inputSuffix, styles.inputSuffixToggle]}>{weightUnit}</Text>
+            </TouchableOpacity>
           </View>
         </View>
 
@@ -491,6 +501,11 @@ const styles = StyleSheet.create({
     fontSize: FontSize.bodyMD,
     color: Colors.onSurfaceVariant,
   },
+  inputSuffixToggle: {
+    color: Colors.primary,
+    fontFamily: FontFamily.headlineSemiBold,
+    textDecorationLine: 'underline',
+  },
 
   // Gender
   genderRow: { flexDirection: 'row', gap: 12 },
@@ -513,9 +528,9 @@ const styles = StyleSheet.create({
   genderLabelActive: { color: Colors.onPrimary },
 
   // Species
-  speciesGrid: { gap: 8 },
-  speciesRow: { flexDirection: 'row', gap: 8 },
+  speciesScroll: { gap: 8, paddingBottom: 2 },
   speciesChip: {
+    width: 88,
     paddingVertical: 16,
     borderRadius: 16,
     alignItems: 'center',

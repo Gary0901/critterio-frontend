@@ -12,9 +12,12 @@ import {
   KeyboardAvoidingView,
   Platform,
   TextInput,
+  ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RouteProp } from '@react-navigation/native';
 import Svg, { Path, Circle, Text as SvgText } from 'react-native-svg';
@@ -25,7 +28,7 @@ import Badge from '../../components/ui/Badge';
 import { Colors } from '../../constants/colors';
 import { FontFamily, FontSize } from '../../constants/typography';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { getPets, getWeightLogs, addWeightLog, updatePetData, getDiaryEntries, getAiCare, updateCareTargets, AiCareResult } from '../../api';
+import { getPets, getWeightLogs, addWeightLog, updatePetData, deletePet as apiDeletePet, getDiaryEntries, getAiCare, updateCareTargets, AiCareResult } from '../../api';
 import { Pet, WeightLog, DiaryEntry } from '../../types';
 
 const LOCAL_PET_PHOTOS: Record<string, any> = {
@@ -63,10 +66,12 @@ function speciesEmoji(species: string) {
   if (species === 'cat') return '🐱';
   if (species === 'rabbit') return '🐰';
   if (species === 'small') return '🐹';
+  if (species === 'bird') return '🐦';
+  if (species === 'reptile') return '🦎';
   return '🐾';
 }
 
-type CareCategory = 'food' | 'activity' | 'medicine' | 'other';
+type CareCategory = 'food' | 'activity' | 'medicine' | 'environment' | 'other';
 
 type CareItem = {
   id: string;
@@ -79,10 +84,11 @@ type CareItem = {
 };
 
 const CATEGORY_CONFIG_CARE: Record<CareCategory, { icon: keyof typeof MaterialIcons.glyphMap; bgColor: string; iconColor: string; label: string }> = {
-  food:     { icon: 'restaurant',       bgColor: Colors.surfaceContainerHigh, iconColor: Colors.onSurfaceVariant, label: '飲食' },
-  activity: { icon: 'directions-run',   bgColor: Colors.primaryFixed,         iconColor: Colors.primary,           label: '活動' },
-  medicine: { icon: 'medical-services', bgColor: Colors.secondaryContainer,   iconColor: Colors.onSurfaceVariant, label: '藥品' },
-  other:    { icon: 'event-note',       bgColor: Colors.surfaceContainerHigh, iconColor: Colors.onSurfaceVariant, label: '其他' },
+  food:        { icon: 'restaurant',       bgColor: Colors.surfaceContainerHigh, iconColor: Colors.onSurfaceVariant, label: '飲食' },
+  activity:    { icon: 'directions-run',   bgColor: Colors.primaryFixed,         iconColor: Colors.primary,           label: '活動' },
+  medicine:    { icon: 'medical-services', bgColor: Colors.secondaryContainer,   iconColor: Colors.onSurfaceVariant, label: '藥品' },
+  environment: { icon: 'thermostat',       bgColor: Colors.secondaryContainer,   iconColor: Colors.secondary,         label: '環境' },
+  other:       { icon: 'event-note',       bgColor: Colors.surfaceContainerHigh, iconColor: Colors.onSurfaceVariant, label: '其他' },
 };
 
 const INITIAL_CARE_ITEMS: CareItem[] = [];
@@ -92,12 +98,20 @@ const INITIAL_AI_SUGGESTIONS: CareItem[] = [];
 export default function PetDetailScreen({ navigation, route }: Props) {
   const insets = useSafeAreaInsets();
   const { petId } = route.params;
+  const today = new Date().toISOString().split('T')[0];
   const [pet, setPet] = useState<Pet | null>(null);
   const [weightLogs, setWeightLogs] = useState<WeightLog[]>([]);
   const [todayEntry, setTodayEntry] = useState<DiaryEntry | null>(null);
   const [saving, setSaving] = useState(false);
   const [checked, setChecked] = useState<Record<string, boolean>>({});
-  const toggleCheck = (id: string) => setChecked(prev => ({ ...prev, [id]: !prev[id] }));
+  const checkedKey = `care_checked_${petId}_${today}`;
+  const toggleCheck = async (id: string) => {
+    setChecked(prev => {
+      const next = { ...prev, [id]: !prev[id] };
+      AsyncStorage.setItem(checkedKey, JSON.stringify(next)).catch(() => {});
+      return next;
+    });
+  };
   const [activeItems, setActiveItems] = useState<CareItem[]>(INITIAL_CARE_ITEMS);
   const [aiSuggestions, setAiSuggestions] = useState<CareItem[]>(INITIAL_AI_SUGGESTIONS);
   const [aiCareResult, setAiCareResult] = useState<AiCareResult | null>(null);
@@ -151,7 +165,9 @@ export default function PetDetailScreen({ navigation, route }: Props) {
 
   const [sheetVisible, setSheetVisible] = useState(false);
   const [weightInput, setWeightInput] = useState('');
+  const [weightUnit, setWeightUnit] = useState<'kg' | 'g'>('kg');
   const [heightInput, setHeightInput] = useState('');
+  const [recordError, setRecordError] = useState('');
   const slideAnim = useRef(new Animated.Value(500)).current;
 
   // Edit info sheet
@@ -164,10 +180,60 @@ export default function PetDetailScreen({ navigation, route }: Props) {
   const [editJoinYear, setEditJoinYear] = useState('');
   const [editJoinMonth, setEditJoinMonth] = useState('');
   const [editJoinDay, setEditJoinDay] = useState('');
+  const [editError, setEditError] = useState('');
   const editSlideAnim = useRef(new Animated.Value(500)).current;
+
+  const clampMonth = (v: string) => {
+    const n = parseInt(v, 10);
+    if (isNaN(n)) return v;
+    if (n < 1) return '1';
+    if (n > 12) return '12';
+    return v;
+  };
+  const clampDay = (v: string) => {
+    const n = parseInt(v, 10);
+    if (isNaN(n)) return v;
+    if (n < 1) return '1';
+    if (n > 31) return '31';
+    return v;
+  };
+
+  const [photoUploading, setPhotoUploading] = useState(false);
+
+  const pickPetPhoto = async () => {
+    if (!pet || LOCAL_PET_PHOTOS[pet.id]) return;
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('權限不足', '請允許存取相片庫以更換照片。');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      quality: 0.8,
+    });
+    if (result.canceled) return;
+    const asset = result.assets[0];
+    setPhotoUploading(true);
+    try {
+      const res = await updatePetData(petId, {
+        photo: { uri: asset.uri, name: asset.fileName ?? 'photo.jpg', type: asset.mimeType ?? 'image/jpeg' },
+      });
+      if (res.success) {
+        setPet((prev) => prev ? { ...prev, ...res.data } : prev);
+      } else {
+        Alert.alert('上傳失敗', res.message || '請稍後再試');
+      }
+    } catch {
+      Alert.alert('上傳失敗', '請稍後再試');
+    } finally {
+      setPhotoUploading(false);
+    }
+  };
 
   const openEditSheet = () => {
     if (!pet) return;
+    setEditError('');
     setEditName(pet.name);
     setEditBreed(pet.breed ?? '');
     const bParts = pet.birthday ? pet.birthday.slice(0, 10).split('-') : ['', '', ''];
@@ -183,25 +249,79 @@ export default function PetDetailScreen({ navigation, route }: Props) {
       .start(() => setEditSheetVisible(false));
   };
 
+  const validateDate = (year: string, month: string, day: string, label: string): string | null => {
+    if (!year && !month && !day) return null; // all empty = optional, OK
+    if (!year || !month || !day) return `${label}：年、月、日請填完整或全部清空`;
+    const y = parseInt(year, 10), m = parseInt(month, 10), d = parseInt(day, 10);
+    if (isNaN(y) || y < 1900 || y > new Date().getFullYear()) return `${label}：年份不合理`;
+    if (isNaN(m) || m < 1 || m > 12) return `${label}：月份須在 1–12 之間`;
+    if (isNaN(d) || d < 1 || d > 31) return `${label}：日期須在 1–31 之間`;
+    return null;
+  };
+
   const handleSaveEdit = async () => {
     if (!editName.trim()) return;
+    const birthErr = validateDate(editBirthYear, editBirthMonth, editBirthDay, '生日');
+    const joinErr  = validateDate(editJoinYear,  editJoinMonth,  editJoinDay,  '加入家庭日');
+    if (birthErr || joinErr) { setEditError((birthErr ?? joinErr)!); return; }
+    setEditError('');
     setSaving(true);
-    const updates: Parameters<typeof updatePetData>[1] = { name: editName.trim(), breed: editBreed.trim() };
-    if (editBirthYear && editBirthMonth && editBirthDay)
-      updates.birthday = `${editBirthYear}-${editBirthMonth.padStart(2,'0')}-${editBirthDay.padStart(2,'0')}`;
-    if (editJoinYear && editJoinMonth && editJoinDay)
-      updates.joinedFamilyAt = `${editJoinYear}-${editJoinMonth.padStart(2,'0')}-${editJoinDay.padStart(2,'0')}`;
-    const res = await updatePetData(petId, updates);
-    setSaving(false);
-    if (res.success) {
-      setPet((prev) => prev ? { ...prev, ...res.data } : prev);
-      closeEditSheet();
+    try {
+      const updates: Parameters<typeof updatePetData>[1] = { name: editName.trim(), breed: editBreed.trim() };
+      if (editBirthYear && editBirthMonth && editBirthDay)
+        updates.birthday = `${editBirthYear}-${editBirthMonth.padStart(2,'0')}-${editBirthDay.padStart(2,'0')}`;
+      if (editJoinYear && editJoinMonth && editJoinDay)
+        updates.joinedFamilyAt = `${editJoinYear}-${editJoinMonth.padStart(2,'0')}-${editJoinDay.padStart(2,'0')}`;
+      const res = await updatePetData(petId, updates);
+      if (res.success) {
+        setPet((prev) => prev ? { ...prev, ...res.data } : prev);
+        closeEditSheet();
+      } else {
+        setEditError(res.message || '儲存失敗，請再試一次');
+      }
+    } catch {
+      setEditError('網路錯誤，請再試一次');
+    } finally {
+      setSaving(false);
     }
   };
 
+  const [deletingPet, setDeletingPet] = useState(false);
+
+  const handleDeletePet = () => {
+    if (!pet) return;
+    Alert.alert(
+      '刪除寵物檔案',
+      `此操作無法復原，${pet.name} 的所有資料（體重紀錄、每日日誌、行事曆事件）都會被永久刪除。確定要刪除嗎？`,
+      [
+        { text: '取消', style: 'cancel' },
+        {
+          text: '確定刪除',
+          style: 'destructive',
+          onPress: async () => {
+            setDeletingPet(true);
+            const res = await apiDeletePet(petId);
+            setDeletingPet(false);
+            if (res.success) {
+              navigation.goBack();
+            } else {
+              Alert.alert('刪除失敗', '請稍後再試');
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const openSheet = () => {
-    setWeightInput(pet ? String(pet.weightKg) : '');
+    const defaultUnit: 'kg' | 'g' =
+      pet && (pet.species === 'bird' || pet.species === 'reptile' || pet.species === 'small') ? 'g' : 'kg';
+    setWeightUnit(defaultUnit);
+    setWeightInput(
+      pet ? (defaultUnit === 'g' ? String(Math.round(pet.weightKg * 1000)) : String(pet.weightKg)) : ''
+    );
     setHeightInput(pet && pet.heightCm > 0 ? String(pet.heightCm) : '');
+    setRecordError('');
     setSheetVisible(true);
     Animated.spring(slideAnim, {
       toValue: 0,
@@ -209,6 +329,19 @@ export default function PetDetailScreen({ navigation, route }: Props) {
       damping: 20,
       stiffness: 150,
     }).start();
+  };
+
+  const toggleWeightUnit = () => {
+    setWeightUnit((prevUnit) => {
+      const nextUnit = prevUnit === 'kg' ? 'g' : 'kg';
+      const current = parseFloat(weightInput);
+      if (!isNaN(current)) {
+        setWeightInput(
+          nextUnit === 'g' ? String(Math.round(current * 1000)) : String(Math.round((current / 1000) * 1000) / 1000)
+        );
+      }
+      return nextUnit;
+    });
   };
 
   const closeSheet = () => {
@@ -220,11 +353,23 @@ export default function PetDetailScreen({ navigation, route }: Props) {
   };
 
   const handleSaveRecord = async () => {
-    const kg = parseFloat(weightInput);
+    const enteredWeight = parseFloat(weightInput);
+    const kg = weightUnit === 'g' ? enteredWeight / 1000 : enteredWeight;
     const cm = parseFloat(heightInput);
-    const hasWeight = !isNaN(kg) && kg > 0;
-    const hasHeight = !isNaN(cm) && cm > 0;
+    const hasWeight = weightInput.trim() !== '' && !isNaN(kg) && kg > 0;
+    const hasHeight = heightInput.trim() !== '' && !isNaN(cm) && cm > 0;
     if (!hasWeight && !hasHeight) return;
+    setRecordError('');
+    if (hasWeight && (kg < 0.01 || kg > 200)) {
+      setRecordError(
+        weightUnit === 'g' ? '體重請輸入 10–200000 g 的合理範圍' : '體重請輸入 0.01–200 kg 的合理範圍'
+      );
+      return;
+    }
+    if (hasHeight && (cm < 0.5 || cm > 300)) {
+      setRecordError('身高請輸入 0.5–300 cm 的合理範圍');
+      return;
+    }
     setSaving(true);
     const tasks: Promise<any>[] = [];
     if (hasWeight) tasks.push(addWeightLog(petId, kg));
@@ -248,31 +393,32 @@ export default function PetDetailScreen({ navigation, route }: Props) {
     closeSheet();
   };
 
-  const today = new Date().toISOString().split('T')[0];
-
   const CATEGORY_ICON: Record<string, keyof typeof MaterialIcons.glyphMap> = {
-    activity: 'directions-run',
-    food:     'restaurant',
-    grooming: 'content-cut',
-    play:     'sports-esports',
-    health:   'medical-services',
-    other:    'event-note',
+    activity:    'directions-run',
+    food:        'restaurant',
+    grooming:    'content-cut',
+    play:        'sports-esports',
+    health:      'medical-services',
+    environment: 'thermostat',
+    other:       'event-note',
   };
   const CATEGORY_BG: Record<string, string> = {
-    activity: Colors.primaryFixed,
-    food:     Colors.surfaceContainerHigh,
-    grooming: Colors.surfaceContainerHigh,
-    play:     Colors.primaryFixed,
-    health:   Colors.secondaryContainer,
-    other:    Colors.surfaceContainerHigh,
+    activity:    Colors.primaryFixed,
+    food:        Colors.surfaceContainerHigh,
+    grooming:    Colors.surfaceContainerHigh,
+    play:        Colors.primaryFixed,
+    health:      Colors.secondaryContainer,
+    environment: Colors.secondaryContainer,
+    other:       Colors.surfaceContainerHigh,
   };
   const CATEGORY_COLOR: Record<string, string> = {
-    activity: Colors.primary,
-    food:     Colors.onSurfaceVariant,
-    grooming: Colors.onSurfaceVariant,
-    play:     Colors.primary,
-    health:   Colors.onSurfaceVariant,
-    other:    Colors.onSurfaceVariant,
+    activity:    Colors.primary,
+    food:        Colors.onSurfaceVariant,
+    grooming:    Colors.onSurfaceVariant,
+    play:        Colors.primary,
+    health:      Colors.onSurfaceVariant,
+    environment: Colors.secondary,
+    other:       Colors.onSurfaceVariant,
   };
 
   useEffect(() => {
@@ -292,13 +438,16 @@ export default function PetDetailScreen({ navigation, route }: Props) {
           })));
         }
       }
-    });
+    }).catch(() => {});
     getWeightLogs(petId).then((res) => {
       if (res.success) setWeightLogs(res.data);
-    });
+    }).catch(() => {});
     getDiaryEntries(petId).then((res) => {
       if (res.success) setTodayEntry(res.data.find((e) => e.date === today) ?? null);
-    });
+    }).catch(() => {});
+    AsyncStorage.getItem(`care_checked_${petId}_${today}`)
+      .then((v) => { if (v) setChecked(JSON.parse(v)); })
+      .catch(() => {});
     loadAiCare(petId, today, false);
   }, [petId, today]);
 
@@ -314,11 +463,16 @@ export default function PetDetailScreen({ navigation, route }: Props) {
       } catch {}
     }
     setAiLoading(true);
-    const res = await getAiCare(id);
-    setAiLoading(false);
-    if (res.success) {
-      applyAiCareResult(res.data);
-      try { await AsyncStorage.setItem(cacheKey, JSON.stringify(res.data)); } catch {}
+    try {
+      const res = await getAiCare(id);
+      if (res.success) {
+        applyAiCareResult(res.data);
+        try { await AsyncStorage.setItem(cacheKey, JSON.stringify(res.data)); } catch {}
+      }
+    } catch {
+      // 網路或伺服器錯誤時保持原本的建議清單，不整頁報錯
+    } finally {
+      setAiLoading(false);
     }
   }
 
@@ -392,7 +546,12 @@ export default function PetDetailScreen({ navigation, route }: Props) {
             <MaterialIcons name="edit" size={16} color={Colors.onSurfaceVariant} />
           </TouchableOpacity>
           <View style={styles.infoRow}>
-            <View style={styles.avatarWrap}>
+            <TouchableOpacity
+              style={styles.avatarWrap}
+              onPress={pickPetPhoto}
+              activeOpacity={LOCAL_PET_PHOTOS[pet.id] ? 1 : 0.75}
+              disabled={photoUploading}
+            >
               {LOCAL_PET_PHOTOS[pet.id] ? (
                 <Image source={LOCAL_PET_PHOTOS[pet.id]} style={styles.avatar} />
               ) : pet.photoUrl ? (
@@ -402,10 +561,20 @@ export default function PetDetailScreen({ navigation, route }: Props) {
                   <Text style={styles.avatarEmoji}>{speciesEmoji(pet.species)}</Text>
                 </View>
               )}
+              {photoUploading && (
+                <View style={[styles.avatar, styles.avatarUploadingOverlay]}>
+                  <ActivityIndicator color="#fff" />
+                </View>
+              )}
+              {!LOCAL_PET_PHOTOS[pet.id] && !photoUploading && (
+                <View style={styles.avatarEditBadge}>
+                  <MaterialIcons name="photo-camera" size={12} color={Colors.onPrimary} />
+                </View>
+              )}
               <View style={styles.pawBadge}>
                 <MaterialIcons name="pets" size={11} color={Colors.primary} />
               </View>
-            </View>
+            </TouchableOpacity>
             <View style={styles.infoRight}>
               <Text style={styles.petName}>{pet.name}</Text>
               <Text style={styles.petSub}>{pet.age} years • {pet.breed}</Text>
@@ -638,29 +807,31 @@ export default function PetDetailScreen({ navigation, route }: Props) {
           )}
         </Card>
 
-        {/* ── Height card ── */}
-        <Card style={styles.card}>
-          <View style={styles.cardHead}>
-            <View>
-              <Text style={styles.cardLabel}>身高</Text>
-              <Text style={styles.bigNum}>
-                {pet.heightCm > 0 ? pet.heightCm : '—'}{' '}
-                {pet.heightCm > 0 && <Text style={styles.unit}>cm</Text>}
-              </Text>
-              {aiCareResult && (
-                <Text style={styles.idealRange}>
-                  理想範圍 {aiCareResult.idealHeightMin}–{aiCareResult.idealHeightMax} cm
+        {/* ── Height card（爬蟲類沒有「身高」概念，不顯示） ── */}
+        {pet.species !== 'reptile' && (
+          <Card style={styles.card}>
+            <View style={styles.cardHead}>
+              <View>
+                <Text style={styles.cardLabel}>身高</Text>
+                <Text style={styles.bigNum}>
+                  {pet.heightCm > 0 ? pet.heightCm : '—'}{' '}
+                  {pet.heightCm > 0 && <Text style={styles.unit}>cm</Text>}
                 </Text>
-              )}
+                {aiCareResult && (
+                  <Text style={styles.idealRange}>
+                    理想範圍 {aiCareResult.idealHeightMin}–{aiCareResult.idealHeightMax} cm
+                  </Text>
+                )}
+              </View>
+              <View style={[styles.iconCircle, { backgroundColor: Colors.secondaryContainer }]}>
+                <MaterialIcons name="straighten" size={20} color={Colors.secondary} />
+              </View>
             </View>
-            <View style={[styles.iconCircle, { backgroundColor: Colors.secondaryContainer }]}>
-              <MaterialIcons name="straighten" size={20} color={Colors.secondary} />
-            </View>
-          </View>
-          {pet.heightCm === 0 && (
-            <Text style={styles.noteText}>點「新增記錄」輸入身高</Text>
-          )}
-        </Card>
+            {pet.heightCm === 0 && (
+              <Text style={styles.noteText}>點「新增記錄」輸入身高</Text>
+            )}
+          </Card>
+        )}
 
         {/* ── Log vitals button ── */}
         <TouchableOpacity style={styles.logBtn} activeOpacity={0.85} onPress={openSheet}>
@@ -779,6 +950,7 @@ export default function PetDetailScreen({ navigation, route }: Props) {
                   style={styles.dateInputSm}
                   value={editBirthMonth}
                   onChangeText={setEditBirthMonth}
+                  onBlur={() => setEditBirthMonth(v => clampMonth(v))}
                   placeholder="月"
                   keyboardType="number-pad"
                   maxLength={2}
@@ -789,6 +961,7 @@ export default function PetDetailScreen({ navigation, route }: Props) {
                   style={styles.dateInputSm}
                   value={editBirthDay}
                   onChangeText={setEditBirthDay}
+                  onBlur={() => setEditBirthDay(v => clampDay(v))}
                   placeholder="日"
                   keyboardType="number-pad"
                   maxLength={2}
@@ -815,6 +988,7 @@ export default function PetDetailScreen({ navigation, route }: Props) {
                   style={styles.dateInputSm}
                   value={editJoinMonth}
                   onChangeText={setEditJoinMonth}
+                  onBlur={() => setEditJoinMonth(v => clampMonth(v))}
                   placeholder="月"
                   keyboardType="number-pad"
                   maxLength={2}
@@ -825,6 +999,7 @@ export default function PetDetailScreen({ navigation, route }: Props) {
                   style={styles.dateInputSm}
                   value={editJoinDay}
                   onChangeText={setEditJoinDay}
+                  onBlur={() => setEditJoinDay(v => clampDay(v))}
                   placeholder="日"
                   keyboardType="number-pad"
                   maxLength={2}
@@ -833,6 +1008,12 @@ export default function PetDetailScreen({ navigation, route }: Props) {
               </View>
             </View>
 
+            {editError ? (
+              <Text style={{ color: Colors.error, fontSize: FontSize.labelSM, fontFamily: FontFamily.bodyMedium }}>
+                {editError}
+              </Text>
+            ) : null}
+
             <TouchableOpacity
               style={[styles.saveBtn, (!editName.trim() || saving) && { opacity: 0.5 }]}
               activeOpacity={0.85}
@@ -840,6 +1021,16 @@ export default function PetDetailScreen({ navigation, route }: Props) {
               disabled={!editName.trim() || saving}
             >
               <Text style={styles.saveBtnLabel}>{saving ? '儲存中...' : '儲存'}</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.deletePetBtn, deletingPet && { opacity: 0.5 }]}
+              activeOpacity={0.75}
+              onPress={handleDeletePet}
+              disabled={deletingPet}
+            >
+              <MaterialIcons name="delete-outline" size={16} color={Colors.error} />
+              <Text style={styles.deletePetBtnLabel}>{deletingPet ? '刪除中...' : '刪除寵物檔案'}</Text>
             </TouchableOpacity>
           </Animated.View>
         </KeyboardAvoidingView>
@@ -872,28 +1063,37 @@ export default function PetDetailScreen({ navigation, route }: Props) {
                   placeholderTextColor={Colors.outline}
                   returnKeyType="next"
                 />
-                <Text style={styles.inputSuffix}>kg</Text>
+                <TouchableOpacity onPress={toggleWeightUnit} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                  <Text style={[styles.inputSuffix, styles.inputSuffixToggle]}>{weightUnit}</Text>
+                </TouchableOpacity>
               </View>
             </View>
 
-            {/* Height */}
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>身高</Text>
-              <View style={styles.inputWrap}>
-                <MaterialIcons name="straighten" size={20} color={Colors.onSurfaceVariant} />
-                <TextInput
-                  style={styles.inputField}
-                  value={heightInput}
-                  onChangeText={setHeightInput}
-                  placeholder={pet && pet.heightCm > 0 ? String(pet.heightCm) : '0'}
-                  keyboardType="decimal-pad"
-                  placeholderTextColor={Colors.outline}
-                  returnKeyType="done"
-                  onSubmitEditing={handleSaveRecord}
-                />
-                <Text style={styles.inputSuffix}>cm</Text>
+            {/* Height（爬蟲類沒有「身高」概念，不顯示） */}
+            {pet.species !== 'reptile' && (
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>身高</Text>
+                <View style={styles.inputWrap}>
+                  <MaterialIcons name="straighten" size={20} color={Colors.onSurfaceVariant} />
+                  <TextInput
+                    style={styles.inputField}
+                    value={heightInput}
+                    onChangeText={setHeightInput}
+                    placeholder={pet && pet.heightCm > 0 ? String(pet.heightCm) : '0'}
+                    keyboardType="decimal-pad"
+                    placeholderTextColor={Colors.outline}
+                    returnKeyType="done"
+                    onSubmitEditing={handleSaveRecord}
+                  />
+                  <Text style={styles.inputSuffix}>cm</Text>
+                </View>
               </View>
-            </View>
+            )}
+
+            {/* Error */}
+            {recordError !== '' && (
+              <Text style={styles.recordErrorText}>{recordError}</Text>
+            )}
 
             {/* Save */}
             <TouchableOpacity
@@ -948,6 +1148,27 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   avatarEmoji: { fontSize: 36 },
+  avatarUploadingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarEditBadge: {
+    position: 'absolute',
+    top: -2,
+    right: -2,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: Colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: Colors.surfaceContainerLowest,
+  },
   pawBadge: {
     position: 'absolute',
     bottom: -2,
@@ -1228,6 +1449,11 @@ const styles = StyleSheet.create({
     fontSize: FontSize.bodyLG,
     color: Colors.onSurfaceVariant,
   },
+  inputSuffixToggle: {
+    color: Colors.primary,
+    fontFamily: FontFamily.headlineSemiBold,
+    textDecorationLine: 'underline',
+  },
   saveBtn: {
     backgroundColor: Colors.primary,
     borderRadius: 9999,
@@ -1238,6 +1464,25 @@ const styles = StyleSheet.create({
     fontFamily: FontFamily.headlineSemiBold,
     fontSize: FontSize.bodyMD,
     color: Colors.onPrimary,
+  },
+  deletePetBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 14,
+  },
+  deletePetBtnLabel: {
+    fontFamily: FontFamily.headlineMedium,
+    fontSize: FontSize.bodyMD,
+    color: Colors.error,
+  },
+  recordErrorText: {
+    fontFamily: FontFamily.bodyMedium,
+    fontSize: FontSize.labelMD,
+    color: Colors.error,
+    marginBottom: 8,
+    textAlign: 'center',
   },
 
   // Care add button

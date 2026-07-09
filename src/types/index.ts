@@ -1,5 +1,5 @@
-export type Species = 'dog' | 'cat' | 'rabbit' | 'small' | 'other';
-export type PetStatus = 'healthy' | 'due_for_vaccine' | 'overdue' | 'warning';
+export type Species = 'dog' | 'cat' | 'rabbit' | 'small' | 'bird' | 'reptile' | 'other';
+export type PetStatus = 'healthy' | 'due_soon' | 'warning';
 export type Gender = 'male' | 'female';
 
 export interface Pet {
@@ -16,12 +16,18 @@ export interface Pet {
   status: PetStatus;
   statusLabel: string;
   nextEvent?: string;
-  weightGoalPercent?: number;
   birthday?: string;   // ISO date string
   joinedAt?: string;   // ISO date string (createdAt)
   careTargets?: { label: string; target: string; category: string }[];
 }
 
+
+export interface NotifSettings {
+  dailyCare: boolean;
+  calendar: boolean;
+  likes: boolean;
+  comments: boolean;
+}
 
 export interface User {
   id: string;
@@ -29,6 +35,8 @@ export interface User {
   email: string;
   avatarUrl?: string;
   lastNameChangedAt?: string; // ISO date string, enforces 14-day cooldown
+  defaultPostVisibility?: 'public' | 'private';
+  notifSettings?: NotifSettings;
 }
 
 export interface Post {
@@ -40,6 +48,7 @@ export interface Post {
   images?: string[];
   hashtags: string[];
   withPets?: string[];
+  postType?: 'question' | 'meetup' | 'share';
   likes: number;
   comments: number;
   timeAgo: string;

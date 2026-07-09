@@ -11,6 +11,7 @@ import {
 } from './mockData';
 import { ApiResponse, Pet, PetStatus, AiMessage, Conversation, DiaryEntry, CalendarEvent, WeightLog, Post, User } from '../types';
 import * as SecureStore from 'expo-secure-store';
+import * as FileSystem from 'expo-file-system/legacy';
 import client, { TOKEN_KEY, BASE_URL } from './client';
 
 function mapPet(p: any): Pet {
@@ -111,8 +112,8 @@ export interface AiCareResult {
   idealHeightMin: number;
   idealHeightMax: number;
   healthNote: string;
-  dailyKcal: number;
-  dailyWaterMl: number;
+  dailyKcal?: number;
+  dailyWaterMl?: number;
 }
 
 // GET /api/v1/pets/:id/ai-care
@@ -139,10 +140,37 @@ export async function updatePetData(petId: string, updates: {
   joinedFamilyAt?: string;
   heightCm?: number;
   weight?: number;
+  photo?: { uri: string; name: string; type: string };
 }): Promise<ApiResponse<Pet>> {
-  const res = await client.patch(`/pets/${petId}`, updates);
+  const form = new FormData();
+  if (updates.name !== undefined) form.append('name', updates.name);
+  if (updates.breed !== undefined) form.append('breed', updates.breed);
+  if (updates.birthday !== undefined) form.append('birthday', updates.birthday);
+  if (updates.joinedFamilyAt !== undefined) form.append('joinedFamilyAt', updates.joinedFamilyAt);
+  if (updates.heightCm !== undefined) form.append('heightCm', String(updates.heightCm));
+  if (updates.weight !== undefined) form.append('weight', String(updates.weight));
+  if (updates.photo) {
+    form.append('photo', { uri: updates.photo.uri, name: updates.photo.name, type: updates.photo.type } as any);
+  }
+  const res = await client.patch(`/pets/${petId}`, form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
   if (!res.data.success) return { success: false, data: null as any, message: res.data.message };
   return { success: true, data: mapPet(res.data.data), message: '' };
+}
+
+// DELETE /api/v1/pets/:id
+export async function deletePet(petId: string): Promise<ApiResponse<null>> {
+  const res = await client.delete(`/pets/${petId}`);
+  if (!res.data.success) return { success: false, data: null, message: res.data.message };
+  return { success: true, data: null, message: '' };
+}
+
+// PATCH /api/v1/pets/reorder
+export async function reorderPets(petIds: string[]): Promise<ApiResponse<null>> {
+  const res = await client.patch('/pets/reorder', { petIds });
+  if (!res.data.success) return { success: false, data: null, message: res.data.message };
+  return { success: true, data: null, message: '' };
 }
 
 // POST /api/v1/pets/:id/weight-logs
@@ -216,6 +244,7 @@ function mapPost(p: any): Post {
     images: p.images ?? [],
     hashtags: p.hashtags ?? [],
     withPets: p.withPets ?? [],
+    postType: p.postType ?? 'share',
     likes: p.metrics?.likesCount ?? 0,
     comments: p.metrics?.commentsCount ?? 0,
     timeAgo: formatTimeAgo(p.createdAt),
@@ -224,12 +253,15 @@ function mapPost(p: any): Post {
   };
 }
 
-// GET /api/v1/posts?page=1&sort=new|hot
+// GET /api/v1/posts?page=1&sort=new|hot&postType=question|meetup|share
 export async function getPosts(
   page = 1,
   sort: 'new' | 'hot' = 'new',
+  postType?: 'question' | 'meetup' | 'share',
 ): Promise<ApiResponse<Post[]>> {
-  const res = await client.get(`/posts?page=${page}&limit=10&sort=${sort}`);
+  const params = new URLSearchParams({ page: String(page), limit: '10', sort });
+  if (postType) params.set('postType', postType);
+  const res = await client.get(`/posts?${params}`);
   if (!res.data.success) return { success: false, data: [], message: res.data.message };
   return { success: true, data: res.data.data.map(mapPost), message: '' };
 }
@@ -242,12 +274,14 @@ export async function createPost(
   onUploadProgress?: (pct: number) => void,
   hashtags?: string[],
   withPets?: string[],
+  postType?: 'question' | 'meetup' | 'share',
 ): Promise<ApiResponse<Post>> {
   const form = new FormData();
   form.append('content', content);
   if (petId) form.append('petId', petId);
   if (hashtags && hashtags.length > 0) form.append('hashtags', JSON.stringify(hashtags));
   if (withPets && withPets.length > 0) form.append('withPets', JSON.stringify(withPets));
+  if (postType) form.append('postType', postType);
   (images ?? []).forEach((img) =>
     form.append('images', { uri: img.uri, name: img.name, type: img.type } as any)
   );
@@ -271,6 +305,13 @@ export async function toggleLike(
   const res = await client.post(`/posts/${postId}/like`);
   if (!res.data.success) return { success: false, data: null as any, message: res.data.message };
   return { success: true, data: res.data.data, message: '' };
+}
+
+// GET /api/v1/posts/:id
+export async function getPostById(postId: string): Promise<ApiResponse<Post>> {
+  const res = await client.get(`/posts/${postId}`);
+  if (!res.data.success) return { success: false, data: null as any, message: res.data.message };
+  return { success: true, data: mapPost(res.data.data), message: '' };
 }
 
 // GET /api/v1/posts/:id  (含留言)
@@ -298,6 +339,13 @@ export async function reportPost(
   reason: 'SPAM' | 'INAPPROPRIATE' | 'OTHER',
 ): Promise<ApiResponse<null>> {
   const res = await client.post(`/posts/${postId}/report`, { reason });
+  if (!res.data.success) return { success: false, data: null, message: res.data.message };
+  return { success: true, data: null, message: '' };
+}
+
+// DELETE /api/v1/posts/:id
+export async function deletePost(postId: string): Promise<ApiResponse<null>> {
+  const res = await client.delete(`/posts/${postId}`);
   if (!res.data.success) return { success: false, data: null, message: res.data.message };
   return { success: true, data: null, message: '' };
 }
@@ -421,12 +469,14 @@ export async function updatePushToken(token: string | null) {
 export async function updateProfile(updates: {
   name?: string;
   avatar?: { uri: string; name: string; type: string };
+  defaultPostVisibility?: 'public' | 'private';
 }): Promise<ApiResponse<User>> {
   const form = new FormData();
   if (updates.name) form.append('name', updates.name);
   if (updates.avatar) {
     form.append('avatar', { uri: updates.avatar.uri, name: updates.avatar.name, type: updates.avatar.type } as any);
   }
+  if (updates.defaultPostVisibility) form.append('defaultPostVisibility', updates.defaultPostVisibility);
   const res = await client.patch('/auth/profile', form, {
     headers: { 'Content-Type': 'multipart/form-data' },
   });
@@ -440,9 +490,25 @@ export async function updateProfile(updates: {
       email: u.email ?? '',
       avatarUrl: u.avatarUrl ?? undefined,
       lastNameChangedAt: u.lastNameChangedAt ?? undefined,
+      defaultPostVisibility: u.defaultPostVisibility ?? 'public',
     },
     message: res.data.message,
   };
+}
+
+// ─── Settings ─────────────────────────────────────────────────────────────────
+// PATCH /api/v1/auth/settings
+export async function updateSettings(updates: {
+  notifSettings?: Partial<{ dailyCare: boolean; calendar: boolean; likes: boolean; comments: boolean }>;
+  defaultPostVisibility?: 'public' | 'private';
+}): Promise<void> {
+  await client.patch('/auth/settings', updates);
+}
+
+// DELETE /api/v1/auth/account
+export async function deleteAccount(): Promise<void> {
+  const res = await client.delete('/auth/account');
+  if (!res.data.success) throw new Error(res.data.message);
 }
 
 export function formatTimeAgo(iso: string): string {
@@ -472,6 +538,9 @@ export interface ApiPlace {
   phone?: string;
   rating?: number;
   weekdayHours?: string[];
+  is24Hours?: boolean;
+  exoticFriendly?: boolean;
+  photoUrl?: string;
   photoRef?: string;
   lat: number;
   lng: number;
@@ -482,10 +551,14 @@ export async function getNearbyPlaces(
   lat: number,
   lng: number,
   type?: string,
-  radius = 5000
+  radius = 5000,
+  is24hr?: boolean,
+  exoticFriendly?: boolean
 ): Promise<ApiResponse<ApiPlace[]>> {
   const params = new URLSearchParams({ lat: String(lat), lng: String(lng), radius: String(radius) });
   if (type) params.set('type', type);
+  if (is24hr) params.set('is24hr', 'true');
+  if (exoticFriendly) params.set('exoticFriendly', 'true');
   const res = await client.get(`/map/places?${params}`);
   return res.data;
 }
@@ -547,20 +620,34 @@ export async function streamAiMessage(
     onDelta: (delta: string) => void;
     onDone: (createdAt: string) => void;
     onError: (msg: string) => void;
+    onImageAttachFailed?: () => void;
   },
   image?: { uri: string; name: string; type: string },
 ): Promise<void> {
   const token = await SecureStore.getItemAsync(TOKEN_KEY);
-  const formData = new FormData();
-  formData.append('content', content);
-  if (image) formData.append('image', { uri: image.uri, name: image.name, type: image.type } as any);
+
+  let imageBase64: string | undefined;
+  if (image) {
+    try {
+      imageBase64 = await FileSystem.readAsStringAsync(image.uri, { encoding: FileSystem.EncodingType.Base64 });
+    } catch (e) {
+      console.warn('[streamAiMessage] 圖片讀取失敗，改為僅傳送文字:', e);
+      callbacks.onImageAttachFailed?.();
+    }
+  }
 
   let response: Response;
   try {
     response = await fetch(`${BASE_URL}/ai/conversations/${convId}/messages`, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${token ?? ''}` },
-      body: formData,
+      headers: {
+        Authorization: `Bearer ${token ?? ''}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        content,
+        ...(imageBase64 ? { imageBase64, imageMimeType: image!.type } : {}),
+      }),
     });
   } catch {
     callbacks.onError('網路連線失敗，請稍後再試。');

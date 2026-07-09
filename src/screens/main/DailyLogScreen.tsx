@@ -8,8 +8,10 @@ import {
   Image,
   TextInput,
   Dimensions,
-  FlatList,
+
   Alert,
+  ActionSheetIOS,
+  Platform,
   ActivityIndicator,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -24,7 +26,6 @@ import { getDiaryEntries, addDiaryEntry } from '../../api';
 import { DiaryEntry } from '../../types';
 
 const { width } = Dimensions.get('window');
-const DATE_ITEM_W = 62;
 
 // ─── Mood config ─────────────────────────────────────────────────────────────
 const MOODS = [
@@ -38,25 +39,44 @@ const MOODS = [
 // ─── Date helpers ─────────────────────────────────────────────────────────────
 const DAY_SHORT = ['日', '一', '二', '三', '四', '五', '六'];
 
-function generateRecentDates(): string[] {
-  const today = new Date();
-  const result: string[] = [];
-  for (let i = 29; i >= 0; i--) {
-    const d = new Date(today);
-    d.setDate(d.getDate() - i);
-    result.push(d.toISOString().split('T')[0]);
+function toDateStr(d: Date): string { return d.toISOString().split('T')[0]; }
+
+function getWeekStart(dateStr: string): string {
+  const d = new Date(dateStr);
+  d.setDate(d.getDate() - d.getDay());
+  return toDateStr(d);
+}
+
+function getWeekDates(weekStartStr: string): string[] {
+  return Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(weekStartStr);
+    d.setDate(d.getDate() + i);
+    return toDateStr(d);
+  });
+}
+
+function getMonthCells(year: number, month: number): (string | null)[] {
+  const firstDow = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const cells: (string | null)[] = Array(firstDow).fill(null);
+  for (let d = 1; d <= daysInMonth; d++) {
+    cells.push(`${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`);
   }
-  return result;
+  while (cells.length % 7 !== 0) cells.push(null);
+  return cells;
 }
 
-function dayName(dateStr: string) {
-  return DAY_SHORT[new Date(dateStr).getDay()];
+function buildWeekLabel(weekStartStr: string): string {
+  const start = new Date(weekStartStr);
+  const end = new Date(weekStartStr);
+  end.setDate(start.getDate() + 6);
+  const sm = start.getMonth() + 1, sd = start.getDate();
+  const em = end.getMonth() + 1, ed = end.getDate();
+  return sm === em ? `${sm}月 ${sd}–${ed}日` : `${sm}月${sd}日 – ${em}月${ed}日`;
 }
 
-function dateNum(dateStr: string) {
-  return new Date(dateStr).getDate();
-}
-
+function dayName(dateStr: string) { return DAY_SHORT[new Date(dateStr).getDay()]; }
+function dateNum(dateStr: string) { return new Date(dateStr).getDate(); }
 function monthLabel(dateStr: string) {
   return new Date(dateStr).toLocaleDateString('zh-TW', { month: 'long' });
 }
@@ -73,7 +93,6 @@ export default function DailyLogScreen({ navigation, route }: Props) {
   const { petId, petName } = route.params;
 
   const today = new Date().toISOString().split('T')[0];
-  const dates = generateRecentDates();
 
   const [entries, setEntries] = useState<DiaryEntry[]>([]);
   const [selectedDate, setSelectedDate] = useState(today);
@@ -85,7 +104,33 @@ export default function DailyLogScreen({ navigation, route }: Props) {
   const [justSaved, setJustSaved] = useState(false);
   const [justSavedPhoto, setJustSavedPhoto] = useState<string | null>(null);
 
-  const stripRef = useRef<FlatList>(null);
+  // ── Calendar view state ──
+  const [viewMode, setViewMode] = useState<'week' | 'month'>('week');
+  const [weekStart, setWeekStart] = useState(() => getWeekStart(today));
+  const [calYear, setCalYear] = useState(() => new Date().getFullYear());
+  const [calMonth, setCalMonth] = useState(() => new Date().getMonth());
+
+  const todayWeekStart = getWeekStart(today);
+  const canNextWeek = weekStart < todayWeekStart;
+  const canNextMonth = calYear < new Date().getFullYear() || calMonth < new Date().getMonth();
+  const weekDates = getWeekDates(weekStart);
+  const monthCells = getMonthCells(calYear, calMonth);
+  const DOW_LABELS = ['日', '一', '二', '三', '四', '五', '六'];
+
+  const prevWeek = () => { const d = new Date(weekStart); d.setDate(d.getDate() - 7); setWeekStart(toDateStr(d)); };
+  const nextWeek = () => { if (!canNextWeek) return; const d = new Date(weekStart); d.setDate(d.getDate() + 7); setWeekStart(toDateStr(d)); };
+  const prevMonth = () => { if (calMonth === 0) { setCalYear(y => y - 1); setCalMonth(11); } else setCalMonth(m => m - 1); };
+  const nextMonth = () => { if (!canNextMonth) return; if (calMonth === 11) { setCalYear(y => y + 1); setCalMonth(0); } else setCalMonth(m => m + 1); };
+  const toggleViewMode = () => {
+    if (viewMode === 'week') {
+      const d = new Date(selectedDate);
+      setCalYear(d.getFullYear()); setCalMonth(d.getMonth());
+      setViewMode('month');
+    } else {
+      setWeekStart(getWeekStart(selectedDate));
+      setViewMode('week');
+    }
+  };
 
   const selectedEntry = entries.find((e) => e.date === selectedDate);
   const entryDates = new Set(entries.map((e) => e.date));
@@ -97,22 +142,13 @@ export default function DailyLogScreen({ navigation, route }: Props) {
     });
   }, [petId]);
 
-  // Scroll date strip to today on mount
-  useEffect(() => {
-    const idx = dates.indexOf(today);
-    if (idx >= 0) {
-      setTimeout(() => {
-        stripRef.current?.scrollToIndex({ index: idx, viewPosition: 0.5, animated: false });
-      }, 100);
-    }
-  }, []);
 
   const toggleMood = (id: string) =>
     setSelectedMoods((prev) =>
       prev.includes(id) ? prev.filter((m) => m !== id) : [...prev, id]
     );
 
-  const pickPhoto = async () => {
+  const launchLibrary = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
       Alert.alert('需要相簿權限', '請在設定中允許存取相簿');
@@ -124,8 +160,39 @@ export default function DailyLogScreen({ navigation, route }: Props) {
       allowsEditing: true,
       aspect: [4, 3],
     });
-    if (!result.canceled && result.assets[0]) {
-      setPhotoUri(result.assets[0].uri);
+    if (!result.canceled && result.assets[0]) setPhotoUri(result.assets[0].uri);
+  };
+
+  const launchCamera = async () => {
+    const { status } = await ImagePicker.requestCameraPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('需要相機權限', '請在設定中允許存取相機');
+      return;
+    }
+    const result = await ImagePicker.launchCameraAsync({
+      mediaTypes: ['images'],
+      quality: 0.8,
+      allowsEditing: true,
+      aspect: [4, 3],
+    });
+    if (!result.canceled && result.assets[0]) setPhotoUri(result.assets[0].uri);
+  };
+
+  const pickPhoto = () => {
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        { options: ['取消', '拍照', '從相簿選取'], cancelButtonIndex: 0 },
+        (idx) => {
+          if (idx === 1) launchCamera();
+          else if (idx === 2) launchLibrary();
+        }
+      );
+    } else {
+      Alert.alert('新增照片', '', [
+        { text: '取消', style: 'cancel' },
+        { text: '拍照', onPress: launchCamera },
+        { text: '從相簿選取', onPress: launchLibrary },
+      ]);
     }
   };
 
@@ -166,29 +233,6 @@ export default function DailyLogScreen({ navigation, route }: Props) {
     navigation.navigate('MainTabs', { screen: 'Community', params: { sharePhoto, sharePetName: petName } } as any);
   };
 
-  // ── Date strip item ────────────────────────────────────────────────────────
-  const renderDateItem = ({ item }: { item: string }) => {
-    const active = item === selectedDate;
-    const hasEntry = entryDates.has(item);
-    return (
-      <TouchableOpacity
-        style={styles.dateItem}
-        onPress={() => setSelectedDate(item)}
-        activeOpacity={0.75}
-      >
-        <Text style={[styles.dayName, active && styles.dayNameActive]}>
-          {dayName(item)}
-        </Text>
-        <View style={[styles.datePill, active && styles.datePillActive]}>
-          <Text style={[styles.dateNum, active && styles.dateNumActive]}>
-            {dateNum(item)}
-          </Text>
-        </View>
-        {hasEntry && <View style={[styles.entryDot, active && styles.entryDotActive]} />}
-        {!hasEntry && <View style={styles.entryDotPlaceholder} />}
-      </TouchableOpacity>
-    );
-  };
 
   const diaryPhoto = selectedEntry
     ? (selectedEntry.photos?.[0] ?? { url: selectedEntry.photoUrl, time: '' })
@@ -205,23 +249,88 @@ export default function DailyLogScreen({ navigation, route }: Props) {
         <View style={styles.iconBtn} />
       </View>
 
-      {/* Date strip — fixed, does not scroll with content */}
-      <FlatList
-        ref={stripRef}
-        data={dates}
-        keyExtractor={(d) => d}
-        renderItem={renderDateItem}
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.dateStrip}
-        getItemLayout={(_, index) => ({
-          length: DATE_ITEM_W,
-          offset: DATE_ITEM_W * index,
-          index,
-        })}
-        onScrollToIndexFailed={() => {}}
-        style={styles.dateStripWrap}
-      />
+      {/* Date picker — week / month toggle */}
+      <View style={styles.calendarWrap}>
+        {/* Nav row */}
+        <View style={styles.calNavRow}>
+          <TouchableOpacity style={styles.calNavBtn} onPress={viewMode === 'week' ? prevWeek : prevMonth}>
+            <MaterialIcons name="chevron-left" size={22} color={Colors.onSurface} />
+          </TouchableOpacity>
+          <Text style={styles.calNavLabel}>
+            {viewMode === 'week' ? buildWeekLabel(weekStart) : `${calYear} 年 ${calMonth + 1} 月`}
+          </Text>
+          <TouchableOpacity
+            style={styles.calNavBtn}
+            onPress={viewMode === 'week' ? nextWeek : nextMonth}
+            disabled={viewMode === 'week' ? !canNextWeek : !canNextMonth}
+          >
+            <MaterialIcons
+              name="chevron-right"
+              size={22}
+              color={(viewMode === 'week' ? canNextWeek : canNextMonth) ? Colors.onSurface : Colors.outlineVariant}
+            />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.calToggleBtn} onPress={toggleViewMode}>
+            <MaterialIcons
+              name={viewMode === 'week' ? 'calendar-month' : 'view-week'}
+              size={18}
+              color={Colors.primary}
+            />
+          </TouchableOpacity>
+        </View>
+
+        {viewMode === 'week' ? (
+          /* ── Week strip ── */
+          <View style={styles.weekRow}>
+            {weekDates.map((d) => {
+              const active = d === selectedDate;
+              const hasEntry = entryDates.has(d);
+              return (
+                <TouchableOpacity key={d} style={styles.weekDateItem} onPress={() => setSelectedDate(d)} activeOpacity={0.75}>
+                  <Text style={[styles.dayName, active && styles.dayNameActive]}>{dayName(d)}</Text>
+                  <View style={[styles.datePill, active && styles.datePillActive]}>
+                    <Text style={[styles.dateNum, active && styles.dateNumActive]}>{dateNum(d)}</Text>
+                  </View>
+                  {hasEntry ? <View style={[styles.entryDot, active && styles.entryDotActive]} /> : <View style={styles.entryDotPlaceholder} />}
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        ) : (
+          /* ── Month grid ── */
+          <>
+            <View style={styles.dowRow}>
+              {DOW_LABELS.map((l) => <Text key={l} style={styles.dowLabel}>{l}</Text>)}
+            </View>
+            <View style={styles.monthGrid}>
+              {monthCells.map((d, i) => {
+                if (!d) return <View key={`e${i}`} style={styles.monthCell} />;
+                const active = d === selectedDate;
+                const hasEntry = entryDates.has(d);
+                const isFuture = d > today;
+                return (
+                  <TouchableOpacity
+                    key={d}
+                    style={styles.monthCell}
+                    onPress={() => { if (!isFuture) setSelectedDate(d); }}
+                    activeOpacity={0.75}
+                    disabled={isFuture}
+                  >
+                    <View style={[styles.monthDatePill, active && styles.monthDatePillActive]}>
+                      <Text style={[styles.monthDateNum, active && styles.monthDateNumActive, isFuture && styles.monthDateFuture]}>
+                        {new Date(d).getDate()}
+                      </Text>
+                    </View>
+                    {hasEntry
+                      ? <View style={[styles.monthEntryDot, active && styles.monthEntryDotActive]} />
+                      : <View style={styles.monthEntryDotPlaceholder} />}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </>
+        )}
+      </View>
 
       {/* Scrollable content */}
       <ScrollView
@@ -234,7 +343,7 @@ export default function DailyLogScreen({ navigation, route }: Props) {
           <>
             <Text style={styles.sectionLabel}>今日一拍</Text>
             <View style={styles.snapWrap}>
-              <Image source={{ uri: diaryPhoto.url }} style={styles.snapPhoto} resizeMode="cover" />
+              <Image source={{ uri: diaryPhoto.url }} style={styles.snapPhoto} resizeMode="contain" />
               {!!diaryPhoto.time && (
                 <View style={styles.snapTimeBadge}>
                   <Text style={styles.snapTime}>{diaryPhoto.time}</Text>
@@ -384,18 +493,30 @@ const styles = StyleSheet.create({
     marginLeft: 4,
   },
 
-  // Date strip
-  dateStripWrap: {
-    marginHorizontal: Math.round(width * 0.05),
+  // ── Calendar ──
+  calendarWrap: {
+    paddingHorizontal: 16,
+    paddingBottom: 10,
     borderBottomWidth: 1,
     borderBottomColor: Colors.surfaceVariant,
   },
-  dateStrip: { paddingVertical: 12 },
-  dateItem: {
-    width: DATE_ITEM_W,
-    alignItems: 'center',
-    gap: 4,
+  calNavRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 6 },
+  calNavBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
+  calNavLabel: {
+    flex: 1,
+    textAlign: 'center',
+    fontFamily: FontFamily.headlineSemiBold,
+    fontSize: FontSize.bodyMD,
+    color: Colors.onSurface,
   },
+  calToggleBtn: {
+    width: 32, height: 32, borderRadius: 10,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: Colors.primaryFixed,
+  },
+  // Week strip
+  weekRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4 },
+  weekDateItem: { flex: 1, alignItems: 'center', gap: 4 },
   dayName: {
     fontFamily: FontFamily.headlineMedium,
     fontSize: FontSize.labelSM,
@@ -403,11 +524,8 @@ const styles = StyleSheet.create({
   },
   dayNameActive: { color: Colors.primary },
   datePill: {
-    width: 40,
-    height: 44,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
+    width: 36, height: 40, borderRadius: 18,
+    alignItems: 'center', justifyContent: 'center',
   },
   datePillActive: { backgroundColor: Colors.primary },
   dateNum: {
@@ -416,14 +534,31 @@ const styles = StyleSheet.create({
     color: Colors.onSurface,
   },
   dateNumActive: { color: Colors.onPrimary },
-  entryDot: {
-    width: 5,
-    height: 5,
-    borderRadius: 3,
-    backgroundColor: Colors.primaryContainer,
-  },
+  entryDot: { width: 5, height: 5, borderRadius: 3, backgroundColor: Colors.primaryContainer },
   entryDotActive: { backgroundColor: Colors.onPrimary },
   entryDotPlaceholder: { width: 5, height: 5 },
+  // Month grid
+  dowRow: { flexDirection: 'row', marginBottom: 2 },
+  dowLabel: {
+    flex: 1, textAlign: 'center',
+    fontFamily: FontFamily.headlineMedium,
+    fontSize: FontSize.labelSM,
+    color: Colors.onSurfaceVariant,
+  },
+  monthGrid: { flexDirection: 'row', flexWrap: 'wrap' },
+  monthCell: { width: `${(100 / 7).toFixed(4)}%` as any, alignItems: 'center', paddingVertical: 3 },
+  monthDatePill: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
+  monthDatePillActive: { backgroundColor: Colors.primary },
+  monthDateNum: {
+    fontFamily: FontFamily.headlineMedium,
+    fontSize: FontSize.labelMD,
+    color: Colors.onSurface,
+  },
+  monthDateNumActive: { color: Colors.onPrimary },
+  monthDateFuture: { color: Colors.outline },
+  monthEntryDot: { width: 4, height: 4, borderRadius: 2, backgroundColor: Colors.primaryContainer },
+  monthEntryDotActive: { backgroundColor: Colors.onPrimary },
+  monthEntryDotPlaceholder: { width: 4, height: 4 },
 
   // Content
   content: { paddingHorizontal: 20, paddingBottom: 48, paddingTop: 20 },
@@ -439,10 +574,11 @@ const styles = StyleSheet.create({
   // Daily Snap
   snapWrap: {
     width: '100%',
-    height: Math.round((width - 40) * 0.75), // 4:3 ratio
+    aspectRatio: 4 / 3,
     borderRadius: 20,
     overflow: 'hidden',
     marginBottom: 20,
+    backgroundColor: '#111',
   },
   snapPhoto: { width: '100%', height: '100%' },
   snapTimeBadge: {
@@ -529,6 +665,7 @@ const styles = StyleSheet.create({
   addPhotoCard: {
     height: 200,
     borderRadius: 20,
+    overflow: 'hidden',
     backgroundColor: Colors.surfaceContainerHigh,
     borderWidth: 1.5,
     borderStyle: 'dashed',

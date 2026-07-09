@@ -30,7 +30,6 @@ export const MOCK_PETS: Pet[] = [
     status: 'healthy',
     statusLabel: 'Healthy',
     nextEvent: 'Next Grooming: June 12',
-    weightGoalPercent: 85,
   },
   {
     id: 'p2',
@@ -43,10 +42,9 @@ export const MOCK_PETS: Pet[] = [
     gender: 'male',
     photoUrl: undefined,
     traits: ['Cuddly', 'Quiet'],
-    status: 'due_for_vaccine',
+    status: 'due_soon',
     statusLabel: 'Due for vaccine',
     nextEvent: 'Health check: Overdue',
-    weightGoalPercent: 40,
   },
   {
     id: 'p3',
@@ -62,7 +60,6 @@ export const MOCK_PETS: Pet[] = [
     status: 'healthy',
     statusLabel: 'Healthy',
     nextEvent: 'Weight goal: 95% met',
-    weightGoalPercent: 95,
   },
 ];
 

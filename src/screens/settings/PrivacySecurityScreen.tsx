@@ -1,4 +1,4 @@
-import { View, Text, Switch, StyleSheet, ScrollView, TouchableOpacity, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, ActionSheetIOS, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -6,6 +6,8 @@ import { useState } from 'react';
 import { RootStackParamList } from '../../types/navigation';
 import { Colors } from '../../constants/colors';
 import { FontFamily, FontSize } from '../../constants/typography';
+import { useAuth } from '../../context/AuthContext';
+import { updateProfile, deleteAccount as apiDeleteAccount } from '../../api';
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'PrivacySecurity'>;
@@ -21,15 +23,61 @@ function ComingSoonBadge() {
 
 export default function PrivacySecurityScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
-  const [showOnMap, setShowOnMap] = useState(true);
+  const { user, updateUser, logout } = useAuth();
+  const [postVisibility, setPostVisibility] = useState<'public' | 'private'>(
+    user?.defaultPostVisibility ?? 'public'
+  );
+  const [deleting, setDeleting] = useState(false);
+
+  const handleVisibilityPress = () => {
+    const options = ['取消', '公開', '限自己'];
+    const handler = async (idx: number) => {
+      if (idx === 0) return;
+      const val: 'public' | 'private' = idx === 1 ? 'public' : 'private';
+      setPostVisibility(val);
+      try {
+        const res = await updateProfile({ defaultPostVisibility: val });
+        if (res.success) updateUser({ defaultPostVisibility: val });
+      } catch {
+        setPostVisibility(postVisibility);
+        Alert.alert('更新失敗', '請稍後再試');
+      }
+    };
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        { options, cancelButtonIndex: 0, title: '貼文預設可見度' },
+        handler,
+      );
+    } else {
+      Alert.alert('貼文預設可見度', undefined, [
+        { text: '公開', onPress: () => handler(1) },
+        { text: '限自己', onPress: () => handler(2) },
+        { text: '取消', style: 'cancel' },
+      ]);
+    }
+  };
 
   const handleDeleteAccount = () => {
     Alert.alert(
       '刪除帳號',
-      '此操作無法復原，所有資料將永久刪除。確定要繼續嗎？',
+      '此操作無法復原，所有資料（寵物、貼文、日誌等）將永久刪除。確定要繼續嗎？',
       [
         { text: '取消', style: 'cancel' },
-        { text: '確定刪除', style: 'destructive', onPress: () => {} },
+        {
+          text: '確定刪除',
+          style: 'destructive',
+          onPress: async () => {
+            setDeleting(true);
+            try {
+              await apiDeleteAccount();
+              await logout();
+              navigation.reset({ index: 0, routes: [{ name: 'Welcome' }] });
+            } catch {
+              setDeleting(false);
+              Alert.alert('刪除失敗', '請稍後再試');
+            }
+          },
+        },
       ]
     );
   };
@@ -71,35 +119,19 @@ export default function PrivacySecurityScreen({ navigation }: Props) {
         <View>
           <Text style={styles.sectionTitle}>隱私設定</Text>
           <View style={styles.card}>
-            <View style={styles.row}>
+            <TouchableOpacity style={styles.row} onPress={handleVisibilityPress} activeOpacity={0.75}>
               <View style={styles.rowIcon}>
-                <MaterialIcons name="public" size={20} color={Colors.primary} />
+                <MaterialIcons name={postVisibility === 'public' ? 'public' : 'lock'} size={20} color={Colors.primary} />
               </View>
               <View style={styles.rowText}>
-                <Text style={styles.rowLabel}>貼文可見度</Text>
-                <Text style={styles.rowDesc}>誰可以看到你的貼文</Text>
+                <Text style={styles.rowLabel}>貼文預設可見度</Text>
+                <Text style={styles.rowDesc}>新發佈貼文的預設對象</Text>
               </View>
               <View style={styles.valueChip}>
-                <Text style={styles.valueChipText}>公開</Text>
+                <Text style={styles.valueChipText}>{postVisibility === 'public' ? '公開' : '限自己'}</Text>
               </View>
-            </View>
-            <View style={styles.divider} />
-            <View style={styles.row}>
-              <View style={styles.rowIcon}>
-                <MaterialIcons name="location-on" size={20} color={Colors.primary} />
-              </View>
-              <View style={styles.rowText}>
-                <Text style={styles.rowLabel}>在地圖上顯示</Text>
-                <Text style={styles.rowDesc}>讓其他用戶在地圖上看到你</Text>
-              </View>
-              <Switch
-                value={showOnMap}
-                onValueChange={setShowOnMap}
-                trackColor={{ false: Colors.surfaceVariant, true: Colors.primaryContainer }}
-                thumbColor={showOnMap ? Colors.primary : Colors.outline}
-                ios_backgroundColor={Colors.surfaceVariant}
-              />
-            </View>
+              <MaterialIcons name="chevron-right" size={20} color={Colors.onSurfaceVariant} />
+            </TouchableOpacity>
           </View>
         </View>
 
@@ -115,11 +147,18 @@ export default function PrivacySecurityScreen({ navigation }: Props) {
               <ComingSoonBadge />
             </View>
             <View style={styles.divider} />
-            <TouchableOpacity style={styles.row} onPress={handleDeleteAccount} activeOpacity={0.75}>
+            <TouchableOpacity
+              style={[styles.row, deleting && { opacity: 0.5 }]}
+              onPress={handleDeleteAccount}
+              disabled={deleting}
+              activeOpacity={0.75}
+            >
               <View style={[styles.rowIcon, { backgroundColor: Colors.errorContainer }]}>
                 <MaterialIcons name="delete-outline" size={20} color={Colors.error} />
               </View>
-              <Text style={[styles.rowLabel, { color: Colors.error }]}>刪除帳號</Text>
+              <Text style={[styles.rowLabel, { color: Colors.error }]}>
+                {deleting ? '刪除中...' : '刪除帳號'}
+              </Text>
               <MaterialIcons name="chevron-right" size={20} color={Colors.error} />
             </TouchableOpacity>
           </View>

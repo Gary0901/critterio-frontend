@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -20,11 +20,13 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
+import * as Clipboard from 'expo-clipboard';
 import AppBar from '../../components/layout/AppBar';
 import { Colors } from '../../constants/colors';
 import { FontFamily, FontSize } from '../../constants/typography';
 import {
   getPosts,
+  getPostById,
   createPost,
   getPets,
   toggleLike as apiToggleLike,
@@ -33,7 +35,7 @@ import {
   reportPost as apiReportPost,
   formatTimeAgo,
 } from '../../api';
-import { Post } from '../../types';
+import { Post, Pet, Species } from '../../types';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useRoute, RouteProp } from '@react-navigation/native';
 import { RootStackParamList, MainTabParamList } from '../../types/navigation';
@@ -53,6 +55,19 @@ interface Comment {
 }
 
 type SortMode = 'new' | 'hot';
+type PostType = 'question' | 'meetup' | 'share';
+type FilterType = 'all' | PostType;
+
+const SPECIES_LABEL: Record<Species, string> = {
+  dog: '狗', cat: '貓', rabbit: '兔子', small: '小動物', bird: '鳥類', reptile: '爬蟲類', other: '其他',
+};
+const ALL_SPECIES: Species[] = ['dog', 'cat', 'rabbit', 'small', 'bird', 'reptile', 'other'];
+
+const POST_TYPE_CONFIG: Record<PostType, { label: string; icon: keyof typeof MaterialIcons.glyphMap; color: string }> = {
+  question: { label: '問題', icon: 'help-outline', color: Colors.error },
+  meetup: { label: '揪團', icon: 'groups', color: Colors.secondary },
+  share: { label: '分享', icon: 'auto-awesome', color: Colors.primary },
+};
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const CARD_IMAGE_WIDTH = SCREEN_WIDTH - 42; // 20*2 margin + 1*2 border
@@ -138,7 +153,17 @@ function PostCard({
       <View style={styles.cardHeader}>
         <Avatar url={post.authorAvatarUrl} name={post.author} />
         <View style={{ flex: 1 }}>
-          <Text style={styles.authorName}>{post.author}</Text>
+          <View style={styles.authorNameRow}>
+            <Text style={styles.authorName}>{post.author}</Text>
+            {post.postType && post.postType !== 'share' && (
+              <View style={[styles.postTypeBadge, { backgroundColor: POST_TYPE_CONFIG[post.postType].color + '22' }]}>
+                <MaterialIcons name={POST_TYPE_CONFIG[post.postType].icon} size={11} color={POST_TYPE_CONFIG[post.postType].color} />
+                <Text style={[styles.postTypeBadgeLabel, { color: POST_TYPE_CONFIG[post.postType].color }]}>
+                  {POST_TYPE_CONFIG[post.postType].label}
+                </Text>
+              </View>
+            )}
+          </View>
           <View style={styles.metaRow}>
             <Text style={styles.timeAgo}>{post.timeAgo}</Text>
             {post.withPets && post.withPets.length > 0 && (
@@ -237,15 +262,18 @@ export default function CommunityScreen({ navigation }: Props) {
   const route = useRoute<RouteProp<MainTabParamList, 'Community'>>();
 
   // Feed state
+  const listRef = useRef<FlatList<Post>>(null);
   const [posts, setPosts] = useState<Post[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [sort, setSort] = useState<SortMode>('new');
+  const [filterType, setFilterType] = useState<FilterType>('all');
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
 
   // Compose state
   const [composing, setComposing] = useState(false);
+  const [postType, setPostType] = useState<PostType>('share');
   const [draft, setDraft] = useState('');
   const [pendingImages, setPendingImages] = useState<ImagePayload[]>([]);
   const [posting, setPosting] = useState(false);
@@ -255,9 +283,51 @@ export default function CommunityScreen({ navigation }: Props) {
   const [showHashtagInput, setShowHashtagInput] = useState(false);
 
   // Pet picker
-  const [petOptions, setPetOptions] = useState<string[]>([]);
+  const [pets, setPets] = useState<Pet[]>([]);
+  const petOptions = pets.map((p) => p.name);
   const [taggedPets, setTaggedPets] = useState<string[]>([]);
   const [showPetPicker, setShowPetPicker] = useState(false);
+
+  // 問題串分類：優先看有標記的寵物，沒標記就看帳號底下全部寵物；
+  // 只有單一物種就直接帶入，跨物種時才需要使用者手動選一個
+  const [questionSpeciesPick, setQuestionSpeciesPick] = useState<Species | null>(null);
+  const relevantSpecies = (taggedPets.length > 0
+    ? pets.filter((p) => taggedPets.includes(p.name))
+    : pets
+  ).map((p) => p.species);
+  const distinctQuestionSpecies = Array.from(new Set(relevantSpecies));
+  const resolvedQuestionSpecies =
+    distinctQuestionSpecies.length === 1
+      ? distinctQuestionSpecies[0]
+      : questionSpeciesPick && distinctQuestionSpecies.includes(questionSpeciesPick)
+      ? questionSpeciesPick
+      : null;
+
+  const autoHashtags =
+    postType === 'question' && resolvedQuestionSpecies
+      ? [`#${SPECIES_LABEL[resolvedQuestionSpecies]}提問`]
+      : [];
+
+  // 揪團活動：結構化欄位（時間/地點/物種為必填），不使用 hashtag 或寵物標記
+  const [meetupTime, setMeetupTime] = useState('');
+  const [meetupLocation, setMeetupLocation] = useState('');
+  const [meetupSpecies, setMeetupSpecies] = useState<Species[]>([]);
+  const [meetupPartners, setMeetupPartners] = useState('');
+  const [meetupNote, setMeetupNote] = useState('');
+
+  const toggleMeetupSpecies = (s: Species) => {
+    setMeetupSpecies((prev) => (prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s]));
+  };
+
+  const meetupValid = meetupTime.trim() !== '' && meetupLocation.trim() !== '' && meetupSpecies.length > 0;
+
+  const buildMeetupContent = () => {
+    const speciesLabel = meetupSpecies.map((s) => SPECIES_LABEL[s]).join('、');
+    let text = `📅 時間：${meetupTime.trim()}\n📍 地點：${meetupLocation.trim()}\n🐾 適合物種：${speciesLabel}`;
+    if (meetupPartners.trim()) text += `\n👥 想找的夥伴：${meetupPartners.trim()}`;
+    if (meetupNote.trim()) text += `\n📝 備註：${meetupNote.trim()}`;
+    return text;
+  };
 
   // Comments
   const [commentPostId, setCommentPostId] = useState<string | null>(null);
@@ -270,12 +340,12 @@ export default function CommunityScreen({ navigation }: Props) {
 
   // ─── Data loading ──────────────────────────────────────────────────────────
 
-  const load = useCallback(async (newSort: SortMode, newPage: number, append: boolean) => {
+  const load = useCallback(async (newSort: SortMode, newFilter: FilterType, newPage: number, append: boolean) => {
     if (newPage === 1) setRefreshing(true);
     else setLoadingMore(true);
 
     try {
-      const res = await getPosts(newPage, newSort);
+      const res = await getPosts(newPage, newSort, newFilter === 'all' ? undefined : newFilter);
       if (!res.success) return;
       setHasMore(res.data.length === 10);
       setPosts((prev) => (append ? [...prev, ...res.data] : res.data));
@@ -288,12 +358,12 @@ export default function CommunityScreen({ navigation }: Props) {
   useEffect(() => {
     setPage(1);
     setHasMore(true);
-    load(sort, 1, false);
-  }, [sort]);
+    load(sort, filterType, 1, false);
+  }, [sort, filterType]);
 
   useEffect(() => {
     getPets().then((res) => {
-      if (res.success) setPetOptions(res.data.map((p) => p.name));
+      if (res.success) setPets(res.data);
     });
   }, []);
 
@@ -311,14 +381,14 @@ export default function CommunityScreen({ navigation }: Props) {
   const onRefresh = () => {
     setPage(1);
     setHasMore(true);
-    load(sort, 1, false);
+    load(sort, filterType, 1, false);
   };
 
   const onLoadMore = () => {
     if (loadingMore || !hasMore) return;
     const next = page + 1;
     setPage(next);
-    load(sort, next, true);
+    load(sort, filterType, next, true);
   };
 
   // ─── Like ─────────────────────────────────────────────────────────────────
@@ -393,12 +463,19 @@ export default function CommunityScreen({ navigation }: Props) {
 
   const cancelCompose = () => {
     setComposing(false);
+    setPostType('share');
+    setQuestionSpeciesPick(null);
     setDraft('');
     setPendingImages([]);
     setDraftHashtags([]);
     setHashtagInput('');
     setShowHashtagInput(false);
     setTaggedPets([]);
+    setMeetupTime('');
+    setMeetupLocation('');
+    setMeetupSpecies([]);
+    setMeetupPartners('');
+    setMeetupNote('');
   };
 
   const addHashtag = () => {
@@ -422,7 +499,11 @@ export default function CommunityScreen({ navigation }: Props) {
   };
 
   const handlePost = async () => {
-    if (!draft.trim() && pendingImages.length === 0) return;
+    if (postType === 'meetup') {
+      if (!meetupValid) return;
+    } else if (!draft.trim() && pendingImages.length === 0) {
+      return;
+    }
     setPosting(true);
     setUploadProgress(0);
 
@@ -434,8 +515,11 @@ export default function CommunityScreen({ navigation }: Props) {
       // 壓縮所有圖片
       const compressed = await Promise.all(pendingImages.map(compressImage));
 
+      const finalHashtags = Array.from(new Set([...autoHashtags, ...draftHashtags]));
+      const content = postType === 'meetup' ? buildMeetupContent() : draft.trim();
+
       const res = await createPost(
-        draft.trim(),
+        content,
         compressed.length > 0 ? compressed : undefined,
         undefined,
         (pct) => {
@@ -447,8 +531,9 @@ export default function CommunityScreen({ navigation }: Props) {
             }, 200);
           }
         },
-        draftHashtags.length > 0 ? draftHashtags : undefined,
-        taggedPets.length > 0 ? taggedPets : undefined,
+        postType === 'meetup' ? undefined : finalHashtags.length > 0 ? finalHashtags : undefined,
+        postType === 'meetup' ? undefined : taggedPets.length > 0 ? taggedPets : undefined,
+        postType,
       );
 
       if (fakeTimer) clearInterval(fakeTimer);
@@ -457,7 +542,9 @@ export default function CommunityScreen({ navigation }: Props) {
       if (res.success) {
         const newPost: Post = res.data;
         setTimeout(() => {
-          setPosts((prev) => [newPost, ...prev]);
+          if (filterType === 'all' || filterType === newPost.postType) {
+            setPosts((prev) => [newPost, ...prev]);
+          }
           cancelCompose();
           setUploadProgress(0);
         }, 300);
@@ -485,6 +572,23 @@ export default function CommunityScreen({ navigation }: Props) {
       }));
     }
   };
+
+  // 從貼文分享連結（critterio://post/:postId）跳轉過來時，抓該篇貼文並置頂顯示
+  useEffect(() => {
+    const sharedPostId = route.params?.postId;
+    if (!sharedPostId) return;
+    (async () => {
+      const res = await getPostById(sharedPostId);
+      if (res.success) {
+        setPosts((prev) => [res.data, ...prev.filter((p) => p.id !== res.data.id)]);
+        listRef.current?.scrollToOffset({ offset: 0, animated: true });
+        openComments(sharedPostId);
+      } else {
+        Alert.alert('找不到貼文', '這則貼文可能已被刪除或不存在。');
+      }
+      navigation.setParams({ postId: undefined } as any);
+    })();
+  }, [route.params?.postId]);
 
   const submitComment = async () => {
     if (!commentText.trim() || !commentPostId) return;
@@ -542,6 +646,7 @@ export default function CommunityScreen({ navigation }: Props) {
       />
 
       <FlatList
+        ref={listRef}
         data={posts}
         keyExtractor={(item) => item.id}
         contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}
@@ -567,63 +672,213 @@ export default function CommunityScreen({ navigation }: Props) {
                     <Text style={styles.progressBarLabel}>{uploadProgress < 100 ? `${uploadProgress}%` : '處理中...'}</Text>
                   </View>
                 )}
-                <TextInput
-                  style={styles.composeInput}
-                  placeholder="你的毛孩今天在做什麼？"
-                  placeholderTextColor={Colors.outlineVariant}
-                  value={draft}
-                  onChangeText={setDraft}
-                  multiline
-                  autoFocus={pendingImages.length === 0}
-                />
+                {!posting && (
+                  <View style={styles.postTypeRow}>
+                    {(Object.keys(POST_TYPE_CONFIG) as PostType[]).map((t) => {
+                      const cfg = POST_TYPE_CONFIG[t];
+                      const active = postType === t;
+                      return (
+                        <TouchableOpacity
+                          key={t}
+                          style={[styles.postTypeChip, active && { backgroundColor: cfg.color, borderColor: cfg.color }]}
+                          onPress={() => setPostType(t)}
+                          activeOpacity={0.75}
+                        >
+                          <MaterialIcons name={cfg.icon} size={14} color={active ? Colors.onPrimary : cfg.color} />
+                          <Text style={[styles.postTypeChipLabel, { color: active ? Colors.onPrimary : cfg.color }]}>
+                            {cfg.label}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
 
-                {taggedPets.length > 0 && (
-                  <View style={styles.taggedPetsRow}>
-                    <MaterialIcons name="pets" size={14} color={Colors.secondary} />
-                    <Text style={styles.taggedPetsText}>與 {taggedPets.join('、')} 一起</Text>
-                    <TouchableOpacity onPress={() => setTaggedPets([])}>
-                      <MaterialIcons name="close" size={14} color={Colors.outlineVariant} />
+                    <View style={{ flex: 1 }} />
+
+                    <TouchableOpacity
+                      onPress={cancelCompose}
+                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    >
+                      <MaterialIcons name="close" size={26} color={Colors.onSurfaceVariant} />
                     </TouchableOpacity>
                   </View>
                 )}
 
-                {draftHashtags.length > 0 && (
-                  <View style={styles.draftHashtagsRow}>
-                    {draftHashtags.map((tag) => (
-                      <TouchableOpacity
-                        key={tag}
-                        style={styles.draftHashtagChip}
-                        onPress={() => removeHashtag(tag)}
-                        activeOpacity={0.7}
-                      >
-                        <Text style={styles.draftHashtagText}>{tag}</Text>
-                        <MaterialIcons name="close" size={11} color={Colors.secondary} />
-                      </TouchableOpacity>
-                    ))}
+                {postType === 'question' && distinctQuestionSpecies.length > 1 && (
+                  <View style={styles.questionSpeciesRow}>
+                    <Text style={styles.questionSpeciesLabel}>這個問題主要關於：</Text>
+                    <View style={styles.questionSpeciesChips}>
+                      {distinctQuestionSpecies.map((sp) => {
+                        const active = resolvedQuestionSpecies === sp;
+                        return (
+                          <TouchableOpacity
+                            key={sp}
+                            style={[styles.speciesPickChip, active && styles.speciesPickChipActive]}
+                            onPress={() => setQuestionSpeciesPick(sp)}
+                            activeOpacity={0.75}
+                          >
+                            <Text style={[styles.speciesPickChipLabel, active && styles.speciesPickChipLabelActive]}>
+                              {SPECIES_LABEL[sp]}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
                   </View>
                 )}
 
-                {showHashtagInput && (
-                  <View style={styles.hashtagInputRow}>
-                    <Text style={styles.hashtagPrefix}>#</Text>
-                    <TextInput
-                      style={styles.hashtagTextInput}
-                      placeholder="輸入標籤後按確認"
-                      placeholderTextColor={Colors.outlineVariant}
-                      value={hashtagInput}
-                      onChangeText={setHashtagInput}
-                      onSubmitEditing={addHashtag}
-                      returnKeyType="done"
-                      autoCapitalize="none"
-                    />
-                    <TouchableOpacity onPress={addHashtag} disabled={!hashtagInput.trim()}>
-                      <MaterialIcons
-                        name="add-circle"
-                        size={22}
-                        color={hashtagInput.trim() ? Colors.primary : Colors.outlineVariant}
+                {postType === 'meetup' ? (
+                  <View style={styles.meetupForm}>
+                    <View style={styles.meetupField}>
+                      <View style={styles.meetupLabelRow}>
+                        <Text style={styles.meetupLabel}>📅 時間</Text>
+                        <Text style={styles.meetupRequiredMark}>*</Text>
+                      </View>
+                      <TextInput
+                        style={styles.meetupInput}
+                        placeholder="例如：7/20（日）下午 2 點"
+                        placeholderTextColor={Colors.outlineVariant}
+                        value={meetupTime}
+                        onChangeText={setMeetupTime}
                       />
-                    </TouchableOpacity>
+                    </View>
+
+                    <View style={styles.meetupField}>
+                      <View style={styles.meetupLabelRow}>
+                        <Text style={styles.meetupLabel}>📍 地點</Text>
+                        <Text style={styles.meetupRequiredMark}>*</Text>
+                      </View>
+                      <TextInput
+                        style={styles.meetupInput}
+                        placeholder="例如：台北市大安森林公園"
+                        placeholderTextColor={Colors.outlineVariant}
+                        value={meetupLocation}
+                        onChangeText={setMeetupLocation}
+                      />
+                    </View>
+
+                    <View style={styles.meetupField}>
+                      <View style={styles.meetupLabelRow}>
+                        <Text style={styles.meetupLabel}>🐾 適合物種</Text>
+                        <Text style={styles.meetupRequiredMark}>*</Text>
+                      </View>
+                      <View style={styles.questionSpeciesChips}>
+                        {ALL_SPECIES.map((sp) => {
+                          const active = meetupSpecies.includes(sp);
+                          return (
+                            <TouchableOpacity
+                              key={sp}
+                              style={[styles.speciesPickChip, active && styles.speciesPickChipActive]}
+                              onPress={() => toggleMeetupSpecies(sp)}
+                              activeOpacity={0.75}
+                            >
+                              <Text style={[styles.speciesPickChipLabel, active && styles.speciesPickChipLabelActive]}>
+                                {SPECIES_LABEL[sp]}
+                              </Text>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </View>
+                    </View>
+
+                    <View style={styles.meetupField}>
+                      <Text style={styles.meetupLabel}>👥 想找的夥伴</Text>
+                      <TextInput
+                        style={styles.meetupInput}
+                        placeholder="例如：想找同樣養守宮的朋友（非必填）"
+                        placeholderTextColor={Colors.outlineVariant}
+                        value={meetupPartners}
+                        onChangeText={setMeetupPartners}
+                      />
+                    </View>
+
+                    <View style={styles.meetupField}>
+                      <Text style={styles.meetupLabel}>📝 備註</Text>
+                      <TextInput
+                        style={[styles.meetupInput, styles.meetupNoteInput]}
+                        placeholder="其他想補充的內容（非必填）"
+                        placeholderTextColor={Colors.outlineVariant}
+                        value={meetupNote}
+                        onChangeText={setMeetupNote}
+                        multiline
+                      />
+                    </View>
                   </View>
+                ) : (
+                  <>
+                    <TextInput
+                      style={styles.composeInput}
+                      placeholder={
+                        postType === 'question'
+                          ? '想請教什麼問題？（會自動加上物種標籤，方便同溫層看到）'
+                          : '你的毛孩今天在做什麼？'
+                      }
+                      placeholderTextColor={Colors.outlineVariant}
+                      value={draft}
+                      onChangeText={setDraft}
+                      multiline
+                      autoFocus={pendingImages.length === 0}
+                    />
+
+                    {autoHashtags.length > 0 && (
+                      <View style={styles.draftHashtagsRow}>
+                        {autoHashtags.map((tag) => (
+                          <View key={tag} style={styles.autoHashtagChip}>
+                            <MaterialIcons name="auto-awesome" size={10} color={Colors.secondary} />
+                            <Text style={styles.draftHashtagText}>{tag}</Text>
+                          </View>
+                        ))}
+                      </View>
+                    )}
+
+                    {taggedPets.length > 0 && (
+                      <View style={styles.taggedPetsRow}>
+                        <MaterialIcons name="pets" size={14} color={Colors.secondary} />
+                        <Text style={styles.taggedPetsText}>與 {taggedPets.join('、')} 一起</Text>
+                        <TouchableOpacity onPress={() => setTaggedPets([])}>
+                          <MaterialIcons name="close" size={14} color={Colors.outlineVariant} />
+                        </TouchableOpacity>
+                      </View>
+                    )}
+
+                    {draftHashtags.length > 0 && (
+                      <View style={styles.draftHashtagsRow}>
+                        {draftHashtags.map((tag) => (
+                          <TouchableOpacity
+                            key={tag}
+                            style={styles.draftHashtagChip}
+                            onPress={() => removeHashtag(tag)}
+                            activeOpacity={0.7}
+                          >
+                            <Text style={styles.draftHashtagText}>{tag}</Text>
+                            <MaterialIcons name="close" size={11} color={Colors.secondary} />
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                    )}
+
+                    {showHashtagInput && (
+                      <View style={styles.hashtagInputRow}>
+                        <Text style={styles.hashtagPrefix}>#</Text>
+                        <TextInput
+                          style={styles.hashtagTextInput}
+                          placeholder="輸入標籤後按確認"
+                          placeholderTextColor={Colors.outlineVariant}
+                          value={hashtagInput}
+                          onChangeText={setHashtagInput}
+                          onSubmitEditing={addHashtag}
+                          returnKeyType="done"
+                          autoCapitalize="none"
+                        />
+                        <TouchableOpacity onPress={addHashtag} disabled={!hashtagInput.trim()}>
+                          <MaterialIcons
+                            name="add-circle"
+                            size={22}
+                            color={hashtagInput.trim() ? Colors.primary : Colors.outlineVariant}
+                          />
+                        </TouchableOpacity>
+                      </View>
+                    )}
+                  </>
                 )}
 
                 {pendingImages.length > 0 && (
@@ -661,21 +916,23 @@ export default function CommunityScreen({ navigation }: Props) {
                   <TouchableOpacity style={styles.mediaBtn} onPress={pickFromGallery}>
                     <MaterialIcons name="photo-library" size={22} color={Colors.primary} />
                   </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.mediaBtn}
-                    onPress={() => setShowHashtagInput((v) => !v)}
-                  >
-                    <MaterialIcons
-                      name="tag"
-                      size={22}
-                      color={
-                        showHashtagInput || draftHashtags.length > 0
-                          ? Colors.primary
-                          : Colors.onSurfaceVariant
-                      }
-                    />
-                  </TouchableOpacity>
-                  {petOptions.length > 0 && (
+                  {postType !== 'meetup' && (
+                    <TouchableOpacity
+                      style={styles.mediaBtn}
+                      onPress={() => setShowHashtagInput((v) => !v)}
+                    >
+                      <MaterialIcons
+                        name="tag"
+                        size={22}
+                        color={
+                          showHashtagInput || draftHashtags.length > 0
+                            ? Colors.primary
+                            : Colors.onSurfaceVariant
+                        }
+                      />
+                    </TouchableOpacity>
+                  )}
+                  {postType !== 'meetup' && petOptions.length > 0 && (
                     <TouchableOpacity
                       style={styles.mediaBtn}
                       onPress={() => setShowPetPicker(true)}
@@ -692,16 +949,15 @@ export default function CommunityScreen({ navigation }: Props) {
 
                   <View style={{ flex: 1 }} />
 
-                  <TouchableOpacity onPress={cancelCompose}>
-                    <Text style={styles.cancelLabel}>取消</Text>
-                  </TouchableOpacity>
                   <TouchableOpacity
                     style={[
                       styles.postBtn,
-                      (!draft.trim() && pendingImages.length === 0) || posting ? { opacity: 0.45 } : undefined,
+                      (postType === 'meetup' ? !meetupValid : !draft.trim() && pendingImages.length === 0) || posting
+                        ? { opacity: 0.45 }
+                        : undefined,
                     ]}
                     onPress={handlePost}
-                    disabled={posting || (!draft.trim() && pendingImages.length === 0)}
+                    disabled={posting || (postType === 'meetup' ? !meetupValid : !draft.trim() && pendingImages.length === 0)}
                   >
                     <Text style={styles.postBtnLabel}>發布</Text>
                   </TouchableOpacity>
@@ -723,6 +979,31 @@ export default function CommunityScreen({ navigation }: Props) {
                 <TouchableOpacity onPress={pickFromGallery} activeOpacity={0.7}>
                   <MaterialIcons name="photo-library" size={22} color={Colors.primary} />
                 </TouchableOpacity>
+              </View>
+            )}
+
+            {/* 分類篩選 tabs */}
+            {!composing && (
+              <View style={styles.sortTabs}>
+                {(['all', 'question', 'meetup', 'share'] as FilterType[]).map((f) => {
+                  const active = filterType === f;
+                  const cfg = f === 'all' ? null : POST_TYPE_CONFIG[f];
+                  return (
+                    <TouchableOpacity
+                      key={f}
+                      style={[styles.sortTab, active && styles.sortTabActive]}
+                      onPress={() => setFilterType(f)}
+                      activeOpacity={0.7}
+                    >
+                      {cfg && (
+                        <MaterialIcons name={cfg.icon} size={14} color={active ? Colors.onPrimary : Colors.onSurfaceVariant} />
+                      )}
+                      <Text style={[styles.sortTabLabel, active && styles.sortTabLabelActive]}>
+                        {f === 'all' ? '全部' : cfg!.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
               </View>
             )}
 
@@ -905,7 +1186,10 @@ export default function CommunityScreen({ navigation }: Props) {
             </View>
             <TouchableOpacity
               style={styles.moreOption}
-              onPress={() => {
+              onPress={async () => {
+                if (!morePostId) return;
+                const link = `critterio://post/${morePostId}`;
+                await Clipboard.setStringAsync(link);
                 setMorePostId(null);
                 Alert.alert('已複製', '連結已複製至剪貼簿');
               }}
@@ -1037,6 +1321,96 @@ const styles = StyleSheet.create({
     fontSize: FontSize.labelSM,
     color: Colors.secondary,
   },
+  autoHashtagChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: Colors.secondaryContainer + '33',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 9999,
+    borderWidth: 1,
+    borderColor: Colors.secondary + '55',
+    borderStyle: 'dashed',
+  },
+
+  postTypeRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  postTypeChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 9999,
+    borderWidth: 1.5,
+    borderColor: Colors.surfaceVariant,
+  },
+  postTypeChipLabel: {
+    fontFamily: FontFamily.headlineSemiBold,
+    fontSize: FontSize.labelSM,
+  },
+
+  meetupForm: { gap: 14 },
+  meetupField: { gap: 6 },
+  meetupLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 2 },
+  meetupLabel: {
+    fontFamily: FontFamily.headlineSemiBold,
+    fontSize: FontSize.labelMD,
+    color: Colors.onSurface,
+  },
+  meetupRequiredMark: {
+    fontFamily: FontFamily.headlineSemiBold,
+    fontSize: FontSize.labelMD,
+    color: Colors.error,
+  },
+  meetupInput: {
+    borderWidth: 1,
+    borderColor: Colors.surfaceVariant,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    fontFamily: FontFamily.bodyMedium,
+    fontSize: FontSize.bodyMD,
+    color: Colors.onSurface,
+    backgroundColor: Colors.surfaceContainerLow,
+  },
+  meetupNoteInput: {
+    minHeight: 60,
+    textAlignVertical: 'top',
+  },
+
+  questionSpeciesRow: { gap: 6 },
+  questionSpeciesLabel: {
+    fontFamily: FontFamily.bodyMedium,
+    fontSize: FontSize.labelSM,
+    color: Colors.onSurfaceVariant,
+  },
+  questionSpeciesChips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  speciesPickChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 9999,
+    borderWidth: 1.5,
+    borderColor: Colors.secondary,
+  },
+  speciesPickChipActive: {
+    backgroundColor: Colors.secondary,
+  },
+  speciesPickChipLabel: {
+    fontFamily: FontFamily.headlineSemiBold,
+    fontSize: FontSize.labelSM,
+    color: Colors.secondary,
+  },
+  speciesPickChipLabelActive: {
+    color: Colors.onPrimary,
+  },
 
   hashtagInputRow: {
     flexDirection: 'row',
@@ -1109,15 +1483,9 @@ const styles = StyleSheet.create({
   composeFooter: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 8,
   },
-  mediaBtn: { padding: 6 },
-  cancelLabel: {
-    fontFamily: FontFamily.headlineMedium,
-    fontSize: FontSize.labelMD,
-    color: Colors.onSurfaceVariant,
-    marginRight: 4,
-  },
+  mediaBtn: { padding: 10 },
   postBtn: {
     backgroundColor: Colors.primary,
     paddingHorizontal: 20,
@@ -1191,10 +1559,27 @@ const styles = StyleSheet.create({
     fontSize: FontSize.labelMD,
     color: Colors.onPrimaryContainer,
   },
+  authorNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
   authorName: {
     fontFamily: FontFamily.headlineSemiBold,
     fontSize: FontSize.bodyMD,
     color: Colors.onSurface,
+  },
+  postTypeBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 9999,
+  },
+  postTypeBadgeLabel: {
+    fontFamily: FontFamily.headlineSemiBold,
+    fontSize: 10,
   },
   metaRow: {
     flexDirection: 'row',

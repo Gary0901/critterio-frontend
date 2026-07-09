@@ -16,11 +16,12 @@ export type RootStackParamList = {
   HelpSupport: undefined;
   Terms: undefined;
   PrivacyPolicy: undefined;
+  PetCareGuide: { category: 'vet' | 'petstore' | 'grooming' };
 };
 
 export type MainTabParamList = {
   MyPets: undefined;
-  Community: { sharePhoto?: { uri: string; name: string; type: string }; sharePetName?: string } | undefined;
+  Community: { sharePhoto?: { uri: string; name: string; type: string }; sharePetName?: string; postId?: string } | undefined;
   AskAI: undefined;
   Map: undefined;
   Reminders: undefined;

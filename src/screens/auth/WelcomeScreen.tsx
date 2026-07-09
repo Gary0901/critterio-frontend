@@ -158,7 +158,7 @@ export default function WelcomeScreen({ navigation }: Props) {
               </View>
             ))}
           </View>
-          <Text style={styles.joinText}>加入 10,000+ 位寵物家長</Text>
+          <Text style={styles.joinText}>加入 100+ 位寵物家長</Text>
         </View>
       </Animated.View>
 

@@ -5,6 +5,9 @@ import {
   StyleSheet,
   FlatList,
   TouchableOpacity,
+  ActionSheetIOS,
+  Alert,
+  Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -155,6 +158,20 @@ export default function NotificationsScreen({ navigation }: Props) {
     setNotifications((prev) => prev.filter((x) => x.id !== id));
   };
 
+  const handleLongPress = (n: Notification) => {
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        { options: ['取消', '刪除通知'], cancelButtonIndex: 0, destructiveButtonIndex: 1 },
+        (idx) => { if (idx === 1) handleDelete(n.id); },
+      );
+    } else {
+      Alert.alert('刪除通知', '確定要刪除這則通知嗎？', [
+        { text: '取消', style: 'cancel' },
+        { text: '刪除', style: 'destructive', onPress: () => handleDelete(n.id) },
+      ]);
+    }
+  };
+
   const markAllRead = async () => {
     await markAllNotificationsRead();
     setNotifications((prev) => prev.map((x) => ({ ...x, read: true })));
@@ -207,7 +224,7 @@ export default function NotificationsScreen({ navigation }: Props) {
               <View style={styles.section}>
                 <Text style={styles.sectionLabel}>今天</Text>
                 {todayNotifs.map((n) => (
-                  <TouchableOpacity key={n.id} onPress={() => handleTap(n)} activeOpacity={0.8}>
+                  <TouchableOpacity key={n.id} onPress={() => handleTap(n)} onLongPress={() => handleLongPress(n)} activeOpacity={0.8}>
                     <View style={[styles.notifRow, !n.read && styles.notifUnread]}>
                       <NotifCard notif={n} />
                       {!n.read && <View style={styles.unreadDot} />}
@@ -222,7 +239,7 @@ export default function NotificationsScreen({ navigation }: Props) {
               <View style={styles.section}>
                 <Text style={styles.sectionLabel}>昨天</Text>
                 {yesterdayNotifs.map((n) => (
-                  <TouchableOpacity key={n.id} onPress={() => handleTap(n)} activeOpacity={0.8}>
+                  <TouchableOpacity key={n.id} onPress={() => handleTap(n)} onLongPress={() => handleLongPress(n)} activeOpacity={0.8}>
                     <View style={[styles.notifRow, !n.read && styles.notifUnread]}>
                       <NotifCard notif={n} />
                       {!n.read && <View style={styles.unreadDot} />}
@@ -237,7 +254,7 @@ export default function NotificationsScreen({ navigation }: Props) {
               <View style={styles.section}>
                 <Text style={styles.sectionLabel}>更早</Text>
                 {earlierNotifs.map((n) => (
-                  <TouchableOpacity key={n.id} onPress={() => handleTap(n)} activeOpacity={0.8}>
+                  <TouchableOpacity key={n.id} onPress={() => handleTap(n)} onLongPress={() => handleLongPress(n)} activeOpacity={0.8}>
                     <View style={[styles.notifRow, !n.read && styles.notifUnread]}>
                       <NotifCard notif={n} />
                       {!n.read && <View style={styles.unreadDot} />}

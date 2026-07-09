@@ -1,4 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   Animated,
   Easing,
@@ -9,6 +11,7 @@ import {
   TouchableOpacity,
   RefreshControl,
   Alert,
+  Modal,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -19,8 +22,9 @@ import PetCard from '../../components/pets/PetCard';
 import Card from '../../components/ui/Card';
 import { Colors } from '../../constants/colors';
 import { FontFamily, FontSize, LineHeight } from '../../constants/typography';
-import { getPets } from '../../api';
-import { Pet } from '../../types';
+import { getPets, deletePet as apiDeletePet, reorderPets as apiReorderPets, getEvents, AiCareResult } from '../../api';
+import { Pet, PetStatus } from '../../types';
+import { buildPetColorMap } from '../../constants/petColors';
 import { useUser } from '../../context/UserContext';
 import { useNotifications } from '../../context/NotificationContext';
 
@@ -33,15 +37,108 @@ export default function MyPetsScreen({ navigation }: Props) {
   const { user } = useUser();
   const { unreadCount } = useNotifications();
   const [pets, setPets] = useState<Pet[]>([]);
+  const petColorMap = useMemo(() => buildPetColorMap(pets.map((p) => p.id)), [pets]);
   const [refreshing, setRefreshing] = useState(false);
   const breathAnim = useRef(new Animated.Value(1)).current;
 
-  const load = async () => {
-    const res = await getPets();
-    if (res.success) setPets(res.data);
+  const [statusOverrides, setStatusOverrides] = useState<Record<string, { status: PetStatus; statusLabel: string }>>({});
+
+  const computeStatuses = async (petsList: Pet[]) => {
+    const now = new Date();
+    const in7Days = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+    const todayStr = now.toISOString().split('T')[0];
+    const in7DaysStr = in7Days.toISOString().split('T')[0];
+    const nextMonthDate = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+
+    const [thisMonthRes, nextMonthRes] = await Promise.all([
+      getEvents(now.getFullYear(), now.getMonth() + 1),
+      getEvents(nextMonthDate.getFullYear(), nextMonthDate.getMonth() + 1),
+    ]);
+    const events = [
+      ...(thisMonthRes.success ? thisMonthRes.data : []),
+      ...(nextMonthRes.success ? nextMonthRes.data : []),
+    ];
+
+    const overrides: Record<string, { status: PetStatus; statusLabel: string }> = {};
+
+    for (const pet of petsList) {
+      const dueEvent = events.find((e) =>
+        (e.petId === pet.id || e.petId === 'all') &&
+        (e.category === 'vet' || e.category === 'medication') &&
+        !e.done &&
+        e.date >= todayStr && e.date <= in7DaysStr
+      );
+
+      let weightStatus: { status: PetStatus; statusLabel: string } | null = null;
+      try {
+        const cached = await AsyncStorage.getItem(`ai_care_v3_${pet.id}_${todayStr}`);
+        if (cached) {
+          const aiCare = JSON.parse(cached) as AiCareResult;
+          if (aiCare.idealWeightMin != null && pet.weightKg < aiCare.idealWeightMin) {
+            weightStatus = { status: 'warning', statusLabel: '體重偏輕' };
+          } else if (aiCare.idealWeightMax != null && pet.weightKg > aiCare.idealWeightMax) {
+            weightStatus = { status: 'warning', statusLabel: '體重偏重' };
+          }
+        }
+      } catch {}
+
+      overrides[pet.id] = {
+        status: dueEvent ? 'due_soon' : (weightStatus?.status ?? 'healthy'),
+        statusLabel: dueEvent ? `「${dueEvent.title}」時間快到了` : (weightStatus?.statusLabel ?? '健康'),
+      };
+    }
+
+    setStatusOverrides(overrides);
   };
 
-  useEffect(() => { load(); }, []);
+  const load = async () => {
+    const res = await getPets();
+    if (res.success) {
+      setPets(res.data);
+      computeStatuses(res.data).catch(() => {});
+    }
+  };
+
+  useFocusEffect(useCallback(() => { load(); }, []));
+
+  const [menuPetId, setMenuPetId] = useState<string | null>(null);
+  const menuPet = pets.find((p) => p.id === menuPetId) ?? null;
+  const menuPetIndex = pets.findIndex((p) => p.id === menuPetId);
+  const canMoveDown = menuPetIndex >= 0 && menuPetIndex < pets.length - 1;
+
+  const moveDown = async () => {
+    if (!canMoveDown) return;
+    const next = [...pets];
+    [next[menuPetIndex], next[menuPetIndex + 1]] = [next[menuPetIndex + 1], next[menuPetIndex]];
+    setPets(next);
+    setMenuPetId(null);
+    apiReorderPets(next.map((p) => p.id)).catch(() => {});
+  };
+
+  const handleDeletePet = () => {
+    if (!menuPet) return;
+    const pet = menuPet;
+    setMenuPetId(null);
+    Alert.alert(
+      '刪除寵物檔案',
+      `此操作無法復原，${pet.name} 的所有資料（體重紀錄、每日日誌、行事曆事件）都會被永久刪除。確定要刪除嗎？`,
+      [
+        { text: '取消', style: 'cancel' },
+        {
+          text: '確定刪除',
+          style: 'destructive',
+          onPress: async () => {
+            const res = await apiDeletePet(pet.id);
+            if (res.success) {
+              setPets((prev) => prev.filter((p) => p.id !== pet.id));
+            } else {
+              Alert.alert('刪除失敗', '請稍後再試');
+            }
+          },
+        },
+      ]
+    );
+  };
 
   useEffect(() => {
     Animated.loop(
@@ -105,13 +202,21 @@ export default function MyPetsScreen({ navigation }: Props) {
 
         {/* Pet cards */}
         <View style={styles.cards}>
-          {pets.map((pet) => (
-            <PetCard
-              key={pet.id}
-              pet={pet}
-              onPress={() => navigation.navigate('PetDetail', { petId: pet.id })}
-            />
-          ))}
+          {pets.map((pet) => {
+            const override = statusOverrides[pet.id];
+            const displayPet = override
+              ? { ...pet, status: override.status, statusLabel: override.statusLabel }
+              : pet;
+            return (
+              <PetCard
+                key={pet.id}
+                pet={displayPet}
+                color={petColorMap[pet.id]}
+                onPress={() => navigation.navigate('PetDetail', { petId: pet.id })}
+                onMenuPress={() => setMenuPetId(pet.id)}
+              />
+            );
+          })}
 
           {/* Empty state card — only shown when no pets exist */}
           {pets.length === 0 && (
@@ -148,6 +253,39 @@ export default function MyPetsScreen({ navigation }: Props) {
           </TouchableOpacity>
         </View>
       </ScrollView>
+
+      <Modal
+        visible={menuPetId !== null}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setMenuPetId(null)}
+      >
+        <View style={{ flex: 1, justifyContent: 'flex-end' }}>
+          <TouchableOpacity
+            style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.4)' }}
+            activeOpacity={1}
+            onPress={() => setMenuPetId(null)}
+          />
+          <View style={[styles.moreSheet, { paddingBottom: insets.bottom + 8 }]}>
+            <View style={styles.sheetHandleWrap}>
+              <View style={styles.sheetHandle} />
+            </View>
+            <TouchableOpacity
+              style={[styles.moreOption, !canMoveDown && { opacity: 0.4 }]}
+              onPress={moveDown}
+              disabled={!canMoveDown}
+              activeOpacity={0.75}
+            >
+              <MaterialIcons name="arrow-downward" size={20} color={Colors.onSurface} />
+              <Text style={styles.moreOptionLabel}>下移一位</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.moreOption} onPress={handleDeletePet} activeOpacity={0.75}>
+              <MaterialIcons name="delete-outline" size={20} color={Colors.error} />
+              <Text style={[styles.moreOptionLabel, { color: Colors.error }]}>刪除寵物檔案</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -256,5 +394,35 @@ const styles = StyleSheet.create({
     fontFamily: FontFamily.headlineSemiBold,
     fontSize: FontSize.labelMD,
     color: Colors.primaryFixed,
+  },
+
+  // Pet card "..." menu sheet
+  moreSheet: {
+    backgroundColor: Colors.background,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: 20,
+    borderTopWidth: 1,
+    borderColor: Colors.surfaceVariant,
+  },
+  sheetHandleWrap: { alignItems: 'center', paddingVertical: 10 },
+  sheetHandle: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: Colors.outlineVariant,
+  },
+  moreOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.surfaceVariant,
+  },
+  moreOptionLabel: {
+    fontFamily: FontFamily.bodyMedium,
+    fontSize: FontSize.bodyMD,
+    color: Colors.onSurface,
   },
 });

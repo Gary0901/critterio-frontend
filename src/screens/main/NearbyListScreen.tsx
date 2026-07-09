@@ -5,11 +5,14 @@ import {
 } from 'react-native';
 import * as Location from 'expo-location';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useNavigation } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { MaterialIcons } from '@expo/vector-icons';
 import { Colors } from '../../constants/colors';
 import { FontFamily, FontSize } from '../../constants/typography';
 import { getNearbyPlaces, getMapFavorites, addMapFavorite, removeMapFavorite, ApiPlace } from '../../api';
 import { BASE_URL } from '../../api/client';
+import { RootStackParamList } from '../../types/navigation';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -119,9 +122,11 @@ function PlaceRow({
     <TouchableOpacity style={styles.row} onPress={openMaps} activeOpacity={0.75}>
       {/* 左側圖示 */}
       <View style={[styles.iconWrap, { backgroundColor: cfg.bgColor }]}>
-        {place.photoRef ? (
+        {place.photoUrl || place.photoRef ? (
           <Image
-            source={{ uri: `${BASE_URL}/map/photo?ref=${place.photoRef}&maxwidth=80` }}
+            source={{
+              uri: place.photoUrl ?? `${BASE_URL}/map/photo?ref=${place.photoRef}&maxwidth=80`,
+            }}
             style={styles.photo}
           />
         ) : (
@@ -197,26 +202,44 @@ interface Props {
 
 export default function NearbyListScreen({ onSwitchToMap, favoriteIds, onToggleFavorite }: Props = {}) {
   const insets = useSafeAreaInsets();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [places, setPlaces] = useState<ListPlace[]>([]);
   const [favoritePlaces, setFavoritePlaces] = useState<ListPlace[]>([]);
   const [localFavIds, setLocalFavIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [search, setSearch] = useState('');
   const [activeFilter, setActiveFilter] = useState<FilterOption>('all');
+  const [is24hrOnly, setIs24hrOnly] = useState(false);
+  const [exoticOnly, setExoticOnly] = useState(false);
   const [userLoc, setUserLoc] = useState<{ lat: number; lng: number } | null>(null);
 
   const effectiveFavIds = favoriteIds ?? localFavIds;
 
-  // 取得定位，只跑一次
+  // 切離「醫院」分類時，24hr／特殊寵物友善篩選一併清除，避免使用者看不到 chip 卻仍套用篩選
+  useEffect(() => {
+    if (activeFilter !== 'vet') {
+      if (is24hrOnly) setIs24hrOnly(false);
+      if (exoticOnly) setExoticOnly(false);
+    }
+  }, [activeFilter]);
+
+  // 取得定位：先用快取 GPS 立即顯示，再用精確 GPS 刷新
   useEffect(() => {
     async function getLocation() {
       const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status === 'granted') {
-        const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-        setUserLoc({ lat: loc.coords.latitude, lng: loc.coords.longitude });
-      } else {
+      if (status !== 'granted') {
         setUserLoc({ lat: 25.0330, lng: 121.5654 });
+        return;
       }
+      // 快取位置 → 立即顯示
+      const last = await Location.getLastKnownPositionAsync();
+      if (last) {
+        setUserLoc({ lat: last.coords.latitude, lng: last.coords.longitude });
+      }
+      // 精確位置 → 背景刷新
+      const fresh = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      setUserLoc({ lat: fresh.coords.latitude, lng: fresh.coords.longitude });
     }
     getLocation();
   }, []);
@@ -234,27 +257,30 @@ export default function NearbyListScreen({ onSwitchToMap, favoriteIds, onToggleF
   // 每次切換分類或取得定位時重新向後端查詢（最愛分類不走此路徑）
   useEffect(() => {
     if (!userLoc || activeFilter === 'favorites') return;
-    async function fetchPlaces() {
-      setLoading(true);
-      try {
-        const apiType = FILTER_TO_API_TYPE[activeFilter];
-        const res = await getNearbyPlaces(userLoc!.lat, userLoc!.lng, apiType, 20000);
+    let cancelled = false;
+    const isFirstLoad = places.length === 0;
+    if (isFirstLoad) setLoading(true); else setRefreshing(true);
+    const apiType = FILTER_TO_API_TYPE[activeFilter];
+    getNearbyPlaces(userLoc.lat, userLoc.lng, apiType, 20000, is24hrOnly, exoticOnly)
+      .then((res) => {
+        if (cancelled) return;
         if (res.success && res.data) {
           const mapped: ListPlace[] = res.data.map((p) => ({
             ...p,
             category: (TYPE_TO_CATEGORY[p.type] ?? 'petstore') as PlaceCategory,
-            distanceM: haversineM(userLoc!.lat, userLoc!.lng, p.lat, p.lng),
+            distanceM: haversineM(userLoc.lat, userLoc.lng, p.lat, p.lng),
             todayHours: todayHours(p.weekdayHours),
           }));
           mapped.sort((a, b) => a.distanceM - b.distanceM);
           setPlaces(mapped);
         }
-      } finally {
-        setLoading(false);
-      }
-    }
-    fetchPlaces();
-  }, [userLoc, activeFilter]);
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) { setLoading(false); setRefreshing(false); }
+      });
+    return () => { cancelled = true; };
+  }, [userLoc, activeFilter, is24hrOnly, exoticOnly]);
 
   // 切換到「最愛」時從 API 取完整收藏清單
   useEffect(() => {
@@ -327,6 +353,15 @@ export default function NearbyListScreen({ onSwitchToMap, favoriteIds, onToggleF
             <MaterialIcons name="close" size={18} color={Colors.outline} />
           </TouchableOpacity>
         )}
+        {(activeFilter === 'vet' || activeFilter === 'petstore' || activeFilter === 'grooming') && (
+          <TouchableOpacity
+            style={[styles.mapToggleBtn, styles.careGuideBtn]}
+            onPress={() => navigation.navigate('PetCareGuide', { category: activeFilter })}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <MaterialIcons name="menu-book" size={20} color="#fff" />
+          </TouchableOpacity>
+        )}
         {onSwitchToMap && (
           <TouchableOpacity
             style={styles.mapToggleBtn}
@@ -374,6 +409,38 @@ export default function NearbyListScreen({ onSwitchToMap, favoriteIds, onToggleF
             </TouchableOpacity>
           );
         })}
+        {activeFilter === 'vet' && (
+          <TouchableOpacity
+            style={[styles.chip, is24hrOnly && styles.chipActive]}
+            onPress={() => {
+              setIs24hrOnly((v) => !v);
+              setExoticOnly(false);
+            }}
+          >
+            <MaterialIcons
+              name="schedule"
+              size={16}
+              color={is24hrOnly ? Colors.onSecondary : Colors.onSurfaceVariant}
+            />
+            <Text style={[styles.chipText, is24hrOnly && styles.chipTextActive]}>24hr</Text>
+          </TouchableOpacity>
+        )}
+        {activeFilter === 'vet' && (
+          <TouchableOpacity
+            style={[styles.chip, exoticOnly && styles.chipActive]}
+            onPress={() => {
+              setExoticOnly((v) => !v);
+              setIs24hrOnly(false);
+            }}
+          >
+            <MaterialIcons
+              name="egg"
+              size={16}
+              color={exoticOnly ? Colors.onSecondary : Colors.onSurfaceVariant}
+            />
+            <Text style={[styles.chipText, exoticOnly && styles.chipTextActive]}>特殊寵物友善</Text>
+          </TouchableOpacity>
+        )}
       </ScrollView>
 
       {/* 餐廳提示 */}
@@ -414,6 +481,16 @@ export default function NearbyListScreen({ onSwitchToMap, favoriteIds, onToggleF
             />
           )}
           ItemSeparatorComponent={() => <View style={styles.separator} />}
+          ListFooterComponent={
+            refreshing ? (
+              <View style={{ alignItems: 'center', paddingVertical: 12 }}>
+                <ActivityIndicator size="small" color={Colors.primary} />
+                <Text style={{ fontFamily: FontFamily.bodyMedium, fontSize: FontSize.labelSM, color: Colors.onSurfaceVariant, marginTop: 4 }}>
+                  更新中...
+                </Text>
+              </View>
+            ) : null
+          }
           contentContainerStyle={{ paddingBottom: insets.bottom + 16 }}
           ListEmptyComponent={
             <View style={styles.empty}>
@@ -451,6 +528,9 @@ const styles = StyleSheet.create({
     width: 32, height: 32, borderRadius: 16,
     backgroundColor: Colors.primaryFixed,
     alignItems: 'center', justifyContent: 'center',
+  },
+  careGuideBtn: {
+    backgroundColor: '#006000',
   },
   searchInput: {
     flex: 1, fontFamily: FontFamily.bodyMedium, fontSize: FontSize.bodyMD,

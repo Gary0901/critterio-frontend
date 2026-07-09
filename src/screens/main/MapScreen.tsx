@@ -15,11 +15,14 @@ import { Marker } from 'react-native-maps';
 import NearbyListScreen from './NearbyListScreen';
 import * as Location from 'expo-location';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useNavigation } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { MaterialIcons } from '@expo/vector-icons';
 import { Colors } from '../../constants/colors';
 import { FontFamily, FontSize } from '../../constants/typography';
 import { getNearbyPlaces, getMapFavorites, addMapFavorite, removeMapFavorite } from '../../api';
 import { BASE_URL } from '../../api/client';
+import { RootStackParamList } from '../../types/navigation';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -35,6 +38,8 @@ type Place = {
   phone?: string;
   hours?: string;       // today's hours (derived from weekdayHours)
   weekdayHours?: string[];
+  is24Hours?: boolean;
+  exoticFriendly?: boolean;
   distance?: string;
   rating?: number;
   photoUrl?: string;    // proxy URL via backend
@@ -146,9 +151,12 @@ function todayHours(weekdayHours?: string[]): string | undefined {
 }
 
 function mapApiPlace(
-  r: { id: string; name: string; type: string; address: string; phone?: string; rating?: number; weekdayHours?: string[]; photoRef?: string; lat: number; lng: number },
+  r: { id: string; name: string; type: string; address: string; phone?: string; rating?: number; weekdayHours?: string[]; is24Hours?: boolean; exoticFriendly?: boolean; photoUrl?: string; photoRef?: string; lat: number; lng: number },
   userLoc?: { latitude: number; longitude: number }
 ): Place {
+  const resolvedPhotoUrl =
+    r.photoUrl ??
+    (r.photoRef ? `${BASE_URL}/map/photo?ref=${encodeURIComponent(r.photoRef)}` : undefined);
   return {
     id: String(r.id),
     name: r.name,
@@ -158,8 +166,10 @@ function mapApiPlace(
     phone: r.phone,
     rating: r.rating,
     weekdayHours: r.weekdayHours,
+    is24Hours: r.is24Hours,
+    exoticFriendly: r.exoticFriendly,
     hours: todayHours(r.weekdayHours),
-    photoUrl: r.photoRef ? `${BASE_URL}/map/photo?ref=${encodeURIComponent(r.photoRef)}` : undefined,
+    photoUrl: resolvedPhotoUrl,
     distance: userLoc ? calcDistance(userLoc.latitude, userLoc.longitude, r.lat, r.lng) : undefined,
     googleMapsUrl: `https://maps.google.com/?q=${encodeURIComponent(r.name + ' ' + r.address)}`,
   };
@@ -333,12 +343,25 @@ const TAB_BAR_HEIGHT = 60;
 
 export default function MapScreen() {
   const insets = useSafeAreaInsets();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const mapRef = useRef<any>(null);
   const cardAnim = useRef(new Animated.Value(0)).current;
   const markerJustPressed = useRef(false);
+  const mapReady = useRef(false);
+  const didFlyToUser = useRef(false);
 
   const [viewMode, setViewMode] = useState<'map' | 'list'>('map');
   const [activeFilter, setActiveFilter] = useState<FilterOption>('all');
+  const [is24hrOnly, setIs24hrOnly] = useState(false);
+  const [exoticOnly, setExoticOnly] = useState(false);
+
+  // 切離「醫院」分類時，24hr／特殊寵物友善篩選一併清除，避免使用者看不到按鈕卻仍套用篩選
+  useEffect(() => {
+    if (activeFilter !== 'vet') {
+      if (is24hrOnly) setIs24hrOnly(false);
+      if (exoticOnly) setExoticOnly(false);
+    }
+  }, [activeFilter]);
   const [selectedPlace, setSelectedPlace] = useState<Place | null>(null);
   const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const [mapCenter, setMapCenter] = useState({ latitude: TAIPEI_REGION.latitude, longitude: TAIPEI_REGION.longitude, radiusM: 5000 });
@@ -394,10 +417,20 @@ export default function MapScreen() {
       .catch(() => {});
   }, []);
 
-  // 當 GPS 取得後，把地圖中心更新為使用者位置
+  const flyToUser = (loc: { latitude: number; longitude: number }) => {
+    if (!mapReady.current || didFlyToUser.current) return;
+    didFlyToUser.current = true;
+    mapRef.current?.animateToRegion(
+      { latitude: loc.latitude, longitude: loc.longitude, latitudeDelta: 0.01, longitudeDelta: 0.01 },
+      800
+    );
+  };
+
+  // 當 GPS 取得後，把地圖中心更新為使用者位置並飛過去
   useEffect(() => {
     if (userLocation) {
       setMapCenter({ latitude: userLocation.latitude, longitude: userLocation.longitude, radiusM: 5000 });
+      flyToUser(userLocation);
     }
   }, [userLocation]);
 
@@ -407,15 +440,18 @@ export default function MapScreen() {
     setMapCenter({ latitude: region.latitude, longitude: region.longitude, radiusM });
   };
 
-  // 地圖中心或篩選變更時重新查詢
+  // 地圖中心或篩選變更時重新查詢（cleanup 避免過期請求覆蓋新結果）
   useEffect(() => {
+    let cancelled = false;
     const apiType = activeFilter !== 'all' ? CATEGORY_TO_APITYPE[activeFilter] : undefined;
-    getNearbyPlaces(mapCenter.latitude, mapCenter.longitude, apiType, mapCenter.radiusM)
+    getNearbyPlaces(mapCenter.latitude, mapCenter.longitude, apiType, mapCenter.radiusM, is24hrOnly, exoticOnly)
       .then((res) => {
-        if (res.success) setPlaces(res.data.map((r) => mapApiPlace(r, userLocation ?? undefined)));
+        if (!cancelled && res.success)
+          setPlaces(res.data.map((r) => mapApiPlace(r, userLocation ?? undefined)));
       })
       .catch(() => {});
-  }, [mapCenter, activeFilter]);
+    return () => { cancelled = true; };
+  }, [mapCenter, activeFilter, is24hrOnly, exoticOnly]);
 
   // Animate preview card in/out
   useEffect(() => {
@@ -497,6 +533,10 @@ export default function MapScreen() {
         initialRegion={TAIPEI_REGION}
         onPress={handleMapPress}
         onRegionChangeComplete={handleRegionChangeComplete}
+        onMapReady={() => {
+          mapReady.current = true;
+          if (userLocation) flyToUser(userLocation);
+        }}
         showsUserLocation
         showsMyLocationButton={false}
         zoomEnabled
@@ -599,6 +639,15 @@ export default function MapScreen() {
             <TouchableOpacity style={styles.fab} onPress={goToMyLocation} activeOpacity={0.85}>
               <MaterialIcons name="my-location" size={22} color={Colors.onPrimary} />
             </TouchableOpacity>
+            {(activeFilter === 'vet' || activeFilter === 'petstore' || activeFilter === 'grooming') && (
+              <TouchableOpacity
+                style={[styles.fab, styles.fabCareGuide]}
+                onPress={() => navigation.navigate('PetCareGuide', { category: activeFilter })}
+                activeOpacity={0.85}
+              >
+                <MaterialIcons name="menu-book" size={22} color={Colors.onPrimary} />
+              </TouchableOpacity>
+            )}
             <TouchableOpacity
               style={[styles.fab, styles.fabHeart]}
               onPress={() => { setShowFavorites(true); setSelectedPlace(null); }}
@@ -624,6 +673,44 @@ export default function MapScreen() {
             >
               <MaterialIcons name="format-list-bulleted" size={20} color={Colors.onSurface} />
             </TouchableOpacity>
+
+            {/* 24hr 篩選（僅醫院分類顯示） */}
+            {activeFilter === 'vet' && (
+              <TouchableOpacity
+                style={[styles.listToggleBtn, styles.hour24Btn, is24hrOnly && styles.listToggleBtnActive]}
+                onPress={() => {
+                  setIs24hrOnly((v) => !v);
+                  setExoticOnly(false);
+                }}
+                activeOpacity={0.85}
+              >
+                <MaterialIcons
+                  name="schedule"
+                  size={18}
+                  color={is24hrOnly ? Colors.onPrimary : Colors.onSurface}
+                />
+                <Text style={[styles.hour24Label, is24hrOnly && styles.hour24LabelActive]}>24hr</Text>
+              </TouchableOpacity>
+            )}
+
+            {/* 特殊寵物友善篩選（僅醫院分類顯示） */}
+            {activeFilter === 'vet' && (
+              <TouchableOpacity
+                style={[styles.listToggleBtn, styles.hour24Btn, exoticOnly && styles.listToggleBtnActive]}
+                onPress={() => {
+                  setExoticOnly((v) => !v);
+                  setIs24hrOnly(false);
+                }}
+                activeOpacity={0.85}
+              >
+                <MaterialIcons
+                  name="egg"
+                  size={18}
+                  color={exoticOnly ? Colors.onPrimary : Colors.onSurface}
+                />
+                <Text style={[styles.hour24Label, exoticOnly && styles.hour24LabelActive]}>特寵</Text>
+              </TouchableOpacity>
+            )}
           </View>
         );
       })()}
@@ -1140,6 +1227,22 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 4,
   },
+  listToggleBtnActive: {
+    backgroundColor: '#0080FF',
+    borderColor: '#0080FF',
+  },
+  hour24Btn: {
+    height: 54,
+    gap: 1,
+  },
+  hour24Label: {
+    fontFamily: FontFamily.headlineSemiBold,
+    fontSize: 10,
+    color: Colors.onSurface,
+  },
+  hour24LabelActive: {
+    color: Colors.onPrimary,
+  },
   filterScroll: {
     paddingHorizontal: 16,
     gap: 8,
@@ -1560,6 +1663,9 @@ const styles = StyleSheet.create({
   },
   fabHeart: {
     backgroundColor: '#E53935',
+  },
+  fabCareGuide: {
+    backgroundColor: '#006000',
   },
   fabBadge: {
     position: 'absolute',

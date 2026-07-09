@@ -4,13 +4,13 @@ import { MaterialIcons } from '@expo/vector-icons';
 import Card from '../ui/Card';
 import Badge from '../ui/Badge';
 import Chip from '../ui/Chip';
-import ProgressBar from '../ui/ProgressBar';
 import { Colors } from '../../constants/colors';
 import { FontFamily, FontSize } from '../../constants/typography';
 import { Pet } from '../../types';
 
 interface Props {
   pet: Pet;
+  color?: string;
   onPress?: () => void;
   onMenuPress?: () => void;
 }
@@ -21,7 +21,7 @@ const LOCAL_PET_PHOTOS: Record<string, any> = {
   p3: require('../../../photo/mypets/mypets3.jpg'),
 };
 
-export default function PetCard({ pet, onPress, onMenuPress }: Props) {
+export default function PetCard({ pet, color, onPress, onMenuPress }: Props) {
   return (
     <TouchableOpacity onPress={onPress} activeOpacity={0.92}>
       <Card style={styles.card}>
@@ -59,11 +59,12 @@ export default function PetCard({ pet, onPress, onMenuPress }: Props) {
           ))}
         </View>
 
-        {/* Progress + next event */}
-        <ProgressBar percent={pet.weightGoalPercent ?? 0} height={4} />
+        {color && <View style={[styles.colorBand, { backgroundColor: color }]} />}
+
         {pet.nextEvent && (
           <Text style={styles.nextEvent}>{pet.nextEvent}</Text>
         )}
+        {!pet.nextEvent && <View style={{ height: 12 }} />}
       </Card>
     </TouchableOpacity>
   );
@@ -114,6 +115,10 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     paddingHorizontal: 16,
     paddingBottom: 12,
+  },
+  colorBand: {
+    height: 3,
+    width: '100%',
   },
   nextEvent: {
     fontFamily: FontFamily.headlineMedium,

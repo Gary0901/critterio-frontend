@@ -55,8 +55,8 @@ const CARD_GAP = 16;
 const STEP = CARD_W + CARD_GAP;
 
 // ── Slide 2 — Ask AI Anything: layout constants ───────────────────────────────
-const AI_IMAGE_SIZE   = 300;
-const AI_IMAGE_TOP    = 30;
+const AI_IMAGE_SIZE   = 240;
+const AI_IMAGE_TOP    = 20;
 const AI_IMAGE_LEFT   = (CARD_W - AI_IMAGE_SIZE) / 2;
 const AI_CONTAINER_H  = AI_IMAGE_SIZE + AI_IMAGE_TOP * 2;
 
@@ -292,8 +292,8 @@ const WEIGHT_DATA = [
   { month: 'MAY', value: 30.8 },
 ];
 const CHART_INNER_W = CARD_W - 32;
-const CHART_H       = 60;
-const CHART_V_PAD   = 14;
+const CHART_H       = 48;
+const CHART_V_PAD   = 10;
 const CHART_H_PAD   = 12;
 const CHART_MAX     = 35;
 
@@ -566,7 +566,7 @@ const DEMO_PLACES = [
 ];
 const LIST_ITEM_H = 72;
 
-function MapSlide({ isVisible, title, titleAccent, body }: { isVisible: boolean; title: string; titleAccent?: string; body: string }) {
+function MapSlide({ isVisible, title, titleAccent }: { isVisible: boolean; title: string; titleAccent?: string; body: string }) {
   const mapRef = useRef<MapView>(null);
   const spotIdxRef = useRef(0);
   const fadeAnim = useRef(new Animated.Value(1)).current;
@@ -982,6 +982,7 @@ export default function OnboardingScreen({ navigation }: Props) {
         scrollEnabled={false}
         showsHorizontalScrollIndicator={false}
         keyExtractor={(item) => item.key}
+        style={{ flex: 1, alignSelf: 'stretch' }}
         renderItem={({ item }) => (
           <View style={item.key === '3' ? styles.slideMap : styles.slide}>
             {item.key === '1' ? (
@@ -1260,7 +1261,7 @@ const aiStyles = StyleSheet.create({
   illustrationOuter: {
     width: CARD_W,
     height: AI_CONTAINER_H,
-    marginBottom: 14,
+    marginBottom: 8,
   },
   imageBox: {
     position: 'absolute',
@@ -1411,15 +1412,15 @@ const aiStyles = StyleSheet.create({
 const vitStyles = StyleSheet.create({
   container: {
     width: CARD_W,
-    gap: 10,
-    marginBottom: 16,
+    gap: 8,
+    marginBottom: 8,
   },
   card: {
     backgroundColor: '#FFFFFF',
     borderRadius: 20,
     paddingHorizontal: 16,
-    paddingTop: 14,
-    paddingBottom: 12,
+    paddingTop: 10,
+    paddingBottom: 8,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.08,
@@ -1493,8 +1494,8 @@ const vitStyles = StyleSheet.create({
     backgroundColor: Colors.surfaceContainerLow,
     borderRadius: 99,
     paddingHorizontal: 10,
-    paddingVertical: 8,
-    marginBottom: 10,
+    paddingVertical: 6,
+    marginBottom: 6,
   },
   reminderIcon: {
     width: 38,
@@ -1557,7 +1558,7 @@ const commStyles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderRadius: 20,
     overflow: 'hidden',
-    marginBottom: 16,
+    marginBottom: 8,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.09,
@@ -1569,7 +1570,7 @@ const commStyles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
     paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingVertical: 6,
   },
   postAvatar: {
     width: 32,
@@ -1597,7 +1598,7 @@ const commStyles = StyleSheet.create({
     flexDirection: 'row',
     gap: 14,
     paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingVertical: 6,
   },
   // Title + description
   title: {
@@ -1613,30 +1614,35 @@ const commStyles = StyleSheet.create({
     fontSize: FontSize.labelMD,
     color: Colors.onSurfaceVariant,
     lineHeight: 20,
-    marginBottom: 14,
+    marginBottom: 8,
   },
-  // Feature rows
-  featureList: { gap: 8 },
-  featureItem: {
+  // Feature row (horizontal, 3 items side-by-side)
+  featureList: {
     flexDirection: 'row',
+    gap: 8,
+  },
+  featureItem: {
+    flex: 1,
+    flexDirection: 'column',
     alignItems: 'center',
-    gap: 12,
+    gap: 6,
     backgroundColor: Colors.surfaceContainerHigh,
-    borderRadius: 99,
-    paddingHorizontal: 14,
+    borderRadius: 16,
+    paddingHorizontal: 8,
     paddingVertical: 10,
   },
   featureIconWrap: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     backgroundColor: Colors.secondaryContainer,
     alignItems: 'center',
     justifyContent: 'center',
   },
   featureLabel: {
     fontFamily: FontFamily.headlineSemiBold,
-    fontSize: FontSize.labelMD,
+    fontSize: FontSize.labelSM,
     color: Colors.onSurface,
+    textAlign: 'center',
   },
 });

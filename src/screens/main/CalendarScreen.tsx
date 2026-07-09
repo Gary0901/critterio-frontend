@@ -19,6 +19,7 @@ import { getEvents, markEventDone, addEvent, deleteEvent, getPets } from '../../
 import { CalendarEvent, Pet } from '../../types';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../types/navigation';
+import { buildPetColorMap, ALL_PETS_COLOR } from '../../constants/petColors';
 import AddEventModal from './AddEventModal';
 
 type Props = {
@@ -27,9 +28,6 @@ type Props = {
 
 const DAY_LABELS = ['日', '一', '二', '三', '四', '五', '六'];
 const MONTH_NAMES = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
-
-const PET_COLOR_PALETTE = ['#E07B39', '#4CAF50', '#2196F3', '#AB47BC', '#EF5350'];
-const ALL_PETS_COLOR = '#9E9E9E';
 
 const CATEGORY_CONFIG: Record<
   string,
@@ -206,11 +204,7 @@ export default function CalendarScreen({ navigation }: Props) {
     [year, month, selectedDay]
   );
 
-  const petColorMap = useMemo(() => {
-    const map: Record<string, string> = {};
-    pets.forEach((p, i) => { map[p.id] = PET_COLOR_PALETTE[i % PET_COLOR_PALETTE.length]; });
-    return map;
-  }, [pets]);
+  const petColorMap = useMemo(() => buildPetColorMap(pets.map((p) => p.id)), [pets]);
 
   const weekStrip = useMemo(() => buildWeekStrip(year, month, selectedDay), [year, month, selectedDay]);
 

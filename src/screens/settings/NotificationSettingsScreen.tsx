@@ -6,18 +6,13 @@ import { useState } from 'react';
 import { RootStackParamList } from '../../types/navigation';
 import { Colors } from '../../constants/colors';
 import { FontFamily, FontSize } from '../../constants/typography';
+import { useAuth } from '../../context/AuthContext';
+import { updateSettings } from '../../api';
+import { NotifSettings } from '../../types';
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'NotificationSettings'>;
 };
-
-type NotifKey =
-  | 'healthAlert'
-  | 'vaccineReminder'
-  | 'medicineReminder'
-  | 'communityLike'
-  | 'communityComment'
-  | 'lostPetAlert';
 
 function SwitchRow({
   icon,
@@ -55,20 +50,43 @@ function SwitchRow({
   );
 }
 
+const DEFAULT_SETTINGS: NotifSettings = {
+  dailyCare: true,
+  calendar: true,
+  likes: true,
+  comments: true,
+};
+
 export default function NotificationSettingsScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
-  const [master, setMaster] = useState(true);
-  const [settings, setSettings] = useState<Record<NotifKey, boolean>>({
-    healthAlert: true,
-    vaccineReminder: true,
-    medicineReminder: true,
-    communityLike: false,
-    communityComment: true,
-    lostPetAlert: true,
-  });
+  const { user, updateUser } = useAuth();
 
-  const toggle = (key: NotifKey) =>
-    master && setSettings((prev) => ({ ...prev, [key]: !prev[key] }));
+  const [settings, setSettings] = useState<NotifSettings>(
+    user?.notifSettings ?? DEFAULT_SETTINGS
+  );
+
+  const allOn = Object.values(settings).every(Boolean);
+
+  const toggle = (key: keyof NotifSettings) => {
+    const next = { ...settings, [key]: !settings[key] };
+    setSettings(next);
+    updateUser({ notifSettings: next });
+    updateSettings({ notifSettings: next }).catch(() => {
+      // 靜默失敗 — 重整後從後端重新載入
+    });
+  };
+
+  const toggleMaster = () => {
+    const next: NotifSettings = {
+      dailyCare: !allOn,
+      calendar:  !allOn,
+      likes:     !allOn,
+      comments:  !allOn,
+    };
+    setSettings(next);
+    updateUser({ notifSettings: next });
+    updateSettings({ notifSettings: next }).catch(() => {});
+  };
 
   return (
     <View style={[styles.container, { paddingBottom: insets.bottom }]}>
@@ -81,56 +99,52 @@ export default function NotificationSettingsScreen({ navigation }: Props) {
       </View>
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        {/* Master toggle */}
+        {/* 主開關 */}
         <View style={styles.masterCard}>
           <View style={styles.masterLeft}>
             <MaterialIcons
               name="notifications"
               size={26}
-              color={master ? Colors.primary : Colors.outline}
+              color={allOn ? Colors.primary : Colors.outline}
             />
             <View>
               <Text style={styles.masterLabel}>推播通知</Text>
-              <Text style={styles.masterDesc}>{master ? '目前已開啟' : '目前已關閉'}</Text>
+              <Text style={styles.masterDesc}>{allOn ? '目前已全部開啟' : '部分或全部已關閉'}</Text>
             </View>
           </View>
           <Switch
-            value={master}
-            onValueChange={setMaster}
+            value={allOn}
+            onValueChange={toggleMaster}
             trackColor={{ false: Colors.surfaceVariant, true: Colors.primaryContainer }}
-            thumbColor={master ? Colors.primary : Colors.outline}
+            thumbColor={allOn ? Colors.primary : Colors.outline}
             ios_backgroundColor={Colors.surfaceVariant}
           />
         </View>
 
-        {/* 健康提醒 */}
+        {/* 每日照護 */}
         <View>
-          <Text style={styles.sectionTitle}>健康提醒</Text>
+          <Text style={styles.sectionTitle}>每日照護</Text>
           <View style={styles.card}>
             <SwitchRow
-              icon="local-hospital"
-              label="健康狀態更新"
-              value={settings.healthAlert}
-              onToggle={() => toggle('healthAlert')}
-              disabled={!master}
+              icon="event-note"
+              label="每日照護提醒"
+              desc="當天還沒記錄時，晚上 8 點通知"
+              value={settings.dailyCare}
+              onToggle={() => toggle('dailyCare')}
             />
-            <View style={styles.divider} />
+          </View>
+        </View>
+
+        {/* 行事曆 */}
+        <View>
+          <Text style={styles.sectionTitle}>行事曆</Text>
+          <View style={styles.card}>
             <SwitchRow
-              icon="event-available"
-              label="疫苗與健康檢查"
-              desc="提前 7 天提醒"
-              value={settings.vaccineReminder}
-              onToggle={() => toggle('vaccineReminder')}
-              disabled={!master}
-            />
-            <View style={styles.divider} />
-            <SwitchRow
-              icon="alarm"
-              label="藥物提醒"
-              desc="依排程時間通知"
-              value={settings.medicineReminder}
-              onToggle={() => toggle('medicineReminder')}
-              disabled={!master}
+              icon="calendar-today"
+              label="行程提醒"
+              desc="行程開始前 1 小時推播"
+              value={settings.calendar}
+              onToggle={() => toggle('calendar')}
             />
           </View>
         </View>
@@ -140,34 +154,19 @@ export default function NotificationSettingsScreen({ navigation }: Props) {
           <Text style={styles.sectionTitle}>社群互動</Text>
           <View style={styles.card}>
             <SwitchRow
-              icon="thumb-up"
+              icon="favorite"
               label="按讚通知"
-              value={settings.communityLike}
-              onToggle={() => toggle('communityLike')}
-              disabled={!master}
+              desc="有人對你的貼文按讚"
+              value={settings.likes}
+              onToggle={() => toggle('likes')}
             />
             <View style={styles.divider} />
             <SwitchRow
-              icon="comment"
+              icon="chat-bubble"
               label="留言通知"
-              value={settings.communityComment}
-              onToggle={() => toggle('communityComment')}
-              disabled={!master}
-            />
-          </View>
-        </View>
-
-        {/* 走失寵物 */}
-        <View>
-          <Text style={styles.sectionTitle}>走失寵物</Text>
-          <View style={styles.card}>
-            <SwitchRow
-              icon="warning"
-              label="附近走失警報"
-              desc="當附近有走失寵物時通知"
-              value={settings.lostPetAlert}
-              onToggle={() => toggle('lostPetAlert')}
-              disabled={!master}
+              desc="有人在你的貼文留言"
+              value={settings.comments}
+              onToggle={() => toggle('comments')}
             />
           </View>
         </View>

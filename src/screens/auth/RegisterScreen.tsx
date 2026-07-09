@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -10,6 +10,9 @@ import {
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import * as Google from 'expo-auth-session/providers/google';
+import * as WebBrowser from 'expo-web-browser';
+import Constants from 'expo-constants';
 import { RootStackParamList } from '../../types/navigation';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
@@ -17,12 +20,19 @@ import { Colors } from '../../constants/colors';
 import { FontFamily, FontSize } from '../../constants/typography';
 import { useAuth } from '../../context/AuthContext';
 
+WebBrowser.maybeCompleteAuthSession();
+
+const googleExtra = (Constants.expoConfig?.extra as any)?.google ?? {};
+
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+const PASSWORD_MAX = 100;
+
 const PASSWORD_RULES = [
-  { key: 'length', label: '至少 8 個字元',        test: (p: string) => p.length >= 8 },
-  { key: 'upper',  label: '至少一個大寫字母（A–Z）', test: (p: string) => /[A-Z]/.test(p) },
-  { key: 'number', label: '至少一個數字（0–9）',    test: (p: string) => /[0-9]/.test(p) },
+  { key: 'length', label: '至少 8 個字元',              test: (p: string) => p.length >= 8 },
+  { key: 'max',    label: `不超過 ${PASSWORD_MAX} 個字元`, test: (p: string) => p.length <= PASSWORD_MAX },
+  { key: 'upper',  label: '至少一個大寫字母（A–Z）',     test: (p: string) => /[A-Z]/.test(p) },
+  { key: 'number', label: '至少一個數字（0–9）',         test: (p: string) => /[0-9]/.test(p) },
 ];
 
 type Props = {
@@ -30,13 +40,35 @@ type Props = {
 };
 
 export default function RegisterScreen({ navigation }: Props) {
-  const { register } = useAuth();
+  const { register, loginWithGoogle } = useAuth();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState('');
   const [emailError, setEmailError] = useState('');
+
+  const [googleRequest, googleResponse, promptGoogleAsync] = Google.useAuthRequest({
+    iosClientId: googleExtra.iosClientId,
+    androidClientId: googleExtra.androidClientId,
+    webClientId: googleExtra.webClientId,
+  });
+
+  useEffect(() => {
+    if (googleResponse?.type === 'success') {
+      const idToken = googleResponse.params?.id_token;
+      if (!idToken) return;
+      setGoogleLoading(true);
+      setError('');
+      loginWithGoogle(idToken)
+        .then(() => navigation.navigate('AddPet', { isOnboarding: true }))
+        .catch((e: any) => setError(e?.response?.data?.message || e?.message || 'Google 註冊失敗，請再試一次。'))
+        .finally(() => setGoogleLoading(false));
+    } else if (googleResponse?.type === 'error') {
+      setError('Google 註冊失敗，請再試一次。');
+    }
+  }, [googleResponse]);
 
   const passwordRulesMet = PASSWORD_RULES.map((r) => r.test(password));
   const allPasswordRulesMet = passwordRulesMet.every(Boolean);
@@ -119,6 +151,7 @@ export default function RegisterScreen({ navigation }: Props) {
             label="設定密碼"
             placeholder="至少 8 個字元"
             isPassword
+            maxLength={PASSWORD_MAX}
             value={password}
             onChangeText={setPassword}
           />
@@ -154,8 +187,15 @@ export default function RegisterScreen({ navigation }: Props) {
           </View>
 
           <View style={styles.socialRow}>
-            <Button label="Google" variant="outline" onPress={() => {}} style={styles.socialBtn} />
-            <Button label="Apple" variant="outline" onPress={() => {}} style={styles.socialBtn} />
+            <Button
+              label="Google"
+              variant="outline"
+              loading={googleLoading}
+              disabled={!googleRequest}
+              onPress={() => promptGoogleAsync()}
+              style={styles.socialBtn}
+            />
+            <Button label="Apple" variant="outline" disabled onPress={() => {}} style={styles.socialBtn} />
           </View>
         </View>
 
@@ -168,8 +208,9 @@ export default function RegisterScreen({ navigation }: Props) {
 
         <Text style={styles.terms}>
           建立帳號即表示您同意 Critterio 的{' '}
-          <Text style={styles.termsLink}>服務條款</Text>與{' '}
-          <Text style={styles.termsLink}>隱私政策</Text>
+          <Text style={styles.termsLink} onPress={() => navigation.navigate('Terms')}>服務條款</Text>
+          {' '}與{' '}
+          <Text style={styles.termsLink} onPress={() => navigation.navigate('PrivacyPolicy')}>隱私政策</Text>
         </Text>
       </ScrollView>
     </KeyboardAvoidingView>

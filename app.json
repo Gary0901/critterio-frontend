@@ -32,7 +32,18 @@
           "color": "#A0522D",
           "sounds": []
         }
-      ]
-    ]
+      ],
+      "expo-web-browser"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "6f1e466a-b6f4-48a0-b545-34fcd17d60b4"
+      },
+      "google": {
+        "iosClientId": "1090997336104-b3rrgq8inb2gkq8kug011o0gi7q24qb7.apps.googleusercontent.com",
+        "webClientId": "1090997336104-i8hvdm79gvroat8f7h7fj8degpvqv973.apps.googleusercontent.com"
+      }
+    },
+    "owner": "critterio"
   }
 }

@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
-import { NavigationContainer } from '@react-navigation/native';
+import { LinkingOptions, NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -35,6 +35,7 @@ import MapScreen from '../screens/main/MapScreen';
 import CalendarScreen from '../screens/main/CalendarScreen';
 import PetDetailScreen from '../screens/main/PetDetailScreen';
 import DailyLogScreen from '../screens/main/DailyLogScreen';
+import PetCareGuideScreen from '../screens/main/PetCareGuideScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const Tab = createBottomTabNavigator<MainTabParamList>();
@@ -140,6 +141,11 @@ const linking = {
   config: {
     screens: {
       ResetPassword: 'reset-password',
+      MainTabs: {
+        screens: {
+          Community: 'post/:postId',
+        },
+      },
     },
   },
 };
@@ -160,7 +166,7 @@ export default function AppNavigation() {
   }
 
   return (
-    <NavigationContainer linking={linking}>
+    <NavigationContainer linking={linking as LinkingOptions<RootStackParamList>}>
       <Stack.Navigator
         initialRouteName={user ? 'MainTabs' : 'Welcome'}
         screenOptions={{ headerShown: false, animation: 'slide_from_right' }}
@@ -216,6 +222,11 @@ export default function AppNavigation() {
         <Stack.Screen
           name="PrivacyPolicy"
           component={PrivacyPolicyScreen}
+          options={{ animation: 'slide_from_right' }}
+        />
+        <Stack.Screen
+          name="PetCareGuide"
+          component={PetCareGuideScreen}
           options={{ animation: 'slide_from_right' }}
         />
       </Stack.Navigator>

@@ -11,6 +11,7 @@ import {
   Modal,
   KeyboardAvoidingView,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -21,7 +22,7 @@ import { Colors } from '../../constants/colors';
 import { FontFamily, FontSize } from '../../constants/typography';
 import { useUser } from '../../context/UserContext';
 import { useAuth } from '../../context/AuthContext';
-import { updateProfile, getMyPosts, getPets, getPostComments, addComment as apiAddComment, formatTimeAgo } from '../../api';
+import { updateProfile, getMyPosts, getPets, getPostComments, addComment as apiAddComment, deletePost as apiDeletePost, formatTimeAgo } from '../../api';
 import { Post } from '../../types';
 import { useState, useCallback, useEffect } from 'react';
 import { useFocusEffect, useRoute, RouteProp } from '@react-navigation/native';
@@ -51,6 +52,8 @@ export default function ProfileScreen({ navigation }: Props) {
   const [petCount, setPetCount] = useState(0);
   const [activeTab, setActiveTab] = useState<'info' | 'posts'>('info');
   const [selectedPost, setSelectedPost] = useState<Post | null>(null);
+  const [localAvatarUri, setLocalAvatarUri] = useState<string | null>(null);
+  const [avatarUploading, setAvatarUploading] = useState(false);
 
   useFocusEffect(useCallback(() => {
     // 舊資料保留顯示，靜默背景更新
@@ -105,6 +108,35 @@ export default function ProfileScreen({ navigation }: Props) {
     setShowComments(false);
     setCommentText('');
     setModalImageIndex(0);
+  };
+
+  const [deletingPost, setDeletingPost] = useState(false);
+
+  const handleDeletePost = () => {
+    if (!selectedPost) return;
+    const postId = selectedPost.id;
+    Alert.alert(
+      '刪除貼文',
+      '此操作無法復原，貼文的內容、圖片、留言與按讚都會被永久刪除。確定要刪除嗎？',
+      [
+        { text: '取消', style: 'cancel' },
+        {
+          text: '確定刪除',
+          style: 'destructive',
+          onPress: async () => {
+            setDeletingPost(true);
+            const res = await apiDeletePost(postId);
+            setDeletingPost(false);
+            if (res.success) {
+              setMyPosts((prev) => prev.filter((p) => p.id !== postId));
+              closeModal();
+            } else {
+              Alert.alert('刪除失敗', '請稍後再試');
+            }
+          },
+        },
+      ]
+    );
   };
 
   const submitComment = async () => {
@@ -172,18 +204,23 @@ export default function ProfileScreen({ navigation }: Props) {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
       allowsEditing: true,
-      aspect: [1, 1],
       quality: 0.8,
     });
     if (!result.canceled) {
       const asset = result.assets[0];
+      setLocalAvatarUri(asset.uri);
+      setAvatarUploading(true);
       try {
         const res = await updateProfile({
           avatar: { uri: asset.uri, name: asset.fileName ?? 'avatar.jpg', type: asset.mimeType ?? 'image/jpeg' },
         });
         updateUser({ avatarUrl: res.data.avatarUrl });
+        setLocalAvatarUri(null);
       } catch (e: any) {
+        setLocalAvatarUri(null);
         Alert.alert('上傳失敗', e.message);
+      } finally {
+        setAvatarUploading(false);
       }
     }
   };
@@ -283,6 +320,9 @@ export default function ProfileScreen({ navigation }: Props) {
                           <Text style={styles.modalAuthorName}>{user.name}</Text>
                           <Text style={styles.modalTimeAgo}>{selectedPost?.timeAgo}</Text>
                         </View>
+                        <TouchableOpacity onPress={handleDeletePost} disabled={deletingPost} style={{ marginRight: 12 }}>
+                          <MaterialIcons name="delete-outline" size={22} color={Colors.error} />
+                        </TouchableOpacity>
                         <TouchableOpacity onPress={closeModal}>
                           <MaterialIcons name="close" size={22} color={Colors.onSurfaceVariant} />
                         </TouchableOpacity>
@@ -399,8 +439,8 @@ export default function ProfileScreen({ navigation }: Props) {
         {/* Avatar */}
         <View style={styles.avatarSection}>
           <View style={styles.avatarWrap}>
-            {user.avatarUrl ? (
-              <Image source={{ uri: user.avatarUrl }} style={styles.avatar} />
+            {(localAvatarUri ?? user.avatarUrl) ? (
+              <Image source={{ uri: localAvatarUri ?? user.avatarUrl }} style={styles.avatar} />
             ) : (
               <View style={[styles.avatar, styles.avatarFallback]}>
                 <Text style={styles.avatarInitials}>
@@ -408,7 +448,12 @@ export default function ProfileScreen({ navigation }: Props) {
                 </Text>
               </View>
             )}
-            <TouchableOpacity style={styles.avatarEdit} onPress={pickAvatar}>
+            {avatarUploading && (
+              <View style={styles.avatarLoadingOverlay}>
+                <ActivityIndicator size="small" color={Colors.onPrimary} />
+              </View>
+            )}
+            <TouchableOpacity style={styles.avatarEdit} onPress={pickAvatar} disabled={avatarUploading}>
               <MaterialIcons name="photo-camera" size={16} color={Colors.onPrimary} />
             </TouchableOpacity>
           </View>
@@ -534,6 +579,13 @@ export default function ProfileScreen({ navigation }: Props) {
                       <Text style={styles.gridCellFallbackText} numberOfLines={5}>{post.content}</Text>
                     </View>
                   )}
+                  {(post.postType === 'question' || post.postType === 'meetup') && (
+                    <View style={styles.gridCellTypeBadge}>
+                      <Text style={styles.gridCellTypeBadgeText}>
+                        {post.postType === 'question' ? '❓' : '👥'}
+                      </Text>
+                    </View>
+                  )}
                 </TouchableOpacity>
               ))}
             </View>
@@ -582,6 +634,15 @@ const styles = StyleSheet.create({
   nameActionBtn: { padding: 4 },
   avatarWrap: { position: 'relative' },
   avatar: { width: 96, height: 96, borderRadius: 48 },
+  avatarLoadingOverlay: {
+    position: 'absolute',
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   avatarFallback: {
     backgroundColor: Colors.primaryContainer,
     alignItems: 'center',
@@ -727,6 +788,21 @@ const styles = StyleSheet.create({
   // Posts grid
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: CELL_GAP },
   gridCell: { width: CELL_SIZE, height: CELL_SIZE, borderRadius: 8, overflow: 'hidden' },
+  gridCellTypeBadge: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  gridCellTypeBadgeText: {
+    fontSize: 11,
+    lineHeight: 13,
+  },
   gridCellImage: { width: '100%', height: '100%' },
   gridCellFallback: {
     width: '100%',
