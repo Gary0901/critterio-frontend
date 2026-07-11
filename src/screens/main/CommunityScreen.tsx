@@ -180,7 +180,7 @@ function PostCard({
         </TouchableOpacity>
       </View>
 
-      <Text style={styles.content}>{post.content}</Text>
+      {post.content.length > 0 && <Text style={styles.content}>{post.content}</Text>}
 
       {post.hashtags.length > 0 && (
         <View style={styles.hashtagRow}>

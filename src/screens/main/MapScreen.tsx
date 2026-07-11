@@ -505,11 +505,17 @@ export default function MapScreen() {
   };
 
   const openGoogleMaps = (place: Place) => {
-    const scheme = Platform.OS === 'ios' ? 'maps:' : 'geo:';
-    const url = `${scheme}${place.coordinate.latitude},${place.coordinate.longitude}?q=${encodeURIComponent(place.name)}`;
-    Linking.canOpenURL(url).then((supported) => {
-      Linking.openURL(supported ? url : (place.googleMapsUrl ?? url));
-    });
+    const fallbackUrl = place.googleMapsUrl ?? `https://maps.google.com/?q=${place.coordinate.latitude},${place.coordinate.longitude}`;
+    if (Platform.OS === 'android') {
+      // Android 的 geo: intent 會讓使用者選擇已安裝的地圖 App（含 Google Maps），iOS 沒有對應的 Google Maps scheme，
+      // 用 maps: 反而會強制開啟 Apple 內建地圖，所以 iOS 一律直接開 Google Maps 網址（若有裝 Google Maps App 會透過 Universal Link 自動接手）
+      const url = `geo:${place.coordinate.latitude},${place.coordinate.longitude}?q=${encodeURIComponent(place.name)}`;
+      Linking.canOpenURL(url).then((supported) => {
+        Linking.openURL(supported ? url : fallbackUrl);
+      });
+    } else {
+      Linking.openURL(fallbackUrl);
+    }
   };
 
   const cardBottom = TAB_BAR_HEIGHT + insets.bottom + 12;
