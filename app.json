@@ -33,7 +33,15 @@
           "sounds": []
         }
       ],
-      "expo-web-browser"
+      "expo-web-browser",
+      [
+        "@sentry/react-native/expo",
+        {
+          "url": "https://sentry.io/",
+          "project": "critterio-frontend",
+          "organization": "critterio-team"
+        }
+      ]
     ],
     "extra": {
       "eas": {
