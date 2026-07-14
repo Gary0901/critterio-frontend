@@ -26,6 +26,19 @@ const QUICK_TAGS = ['飲食', '行為', '健康建議'];
 const SIDEBAR_WIDTH = 280;
 const NEW_CONV_ID = '__new__';
 
+// AI 回覆偶爾會用 **文字** 標粗體，聊天氣泡目前只是純文字渲染，這裡把 ** 語法轉成真的粗體
+function renderMarkdownBold(content: string) {
+  const parts = content.split(/(\*\*.+?\*\*)/g);
+  return parts.map((part, i) => {
+    const match = part.match(/^\*\*(.+)\*\*$/);
+    return match ? (
+      <Text key={i} style={styles.bubbleTextBold}>{match[1]}</Text>
+    ) : (
+      part
+    );
+  });
+}
+
 export default function AskAIScreen() {
   const insets = useSafeAreaInsets();
 
@@ -329,7 +342,7 @@ export default function AskAIScreen() {
                   />
                 )}
                 <Text style={[styles.bubbleText, item.role === 'user' && styles.userText]}>
-                  {item.content}
+                  {renderMarkdownBold(item.content)}
                 </Text>
                 <Text style={[styles.timestamp, item.role === 'user' && styles.timestampUser]}>
                   {item.timestamp}
@@ -585,6 +598,7 @@ const styles = StyleSheet.create({
     color: Colors.onSurface,
     lineHeight: 22,
   },
+  bubbleTextBold: { fontFamily: FontFamily.bodyBold },
   userText: { color: Colors.onPrimary },
   timestamp: {
     fontFamily: FontFamily.bodyMedium,
