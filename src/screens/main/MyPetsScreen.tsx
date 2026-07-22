@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   Animated,
   Easing,
@@ -22,7 +21,7 @@ import PetCard from '../../components/pets/PetCard';
 import Card from '../../components/ui/Card';
 import { Colors } from '../../constants/colors';
 import { FontFamily, FontSize, LineHeight } from '../../constants/typography';
-import { getPets, deletePet as apiDeletePet, reorderPets as apiReorderPets, getEvents, AiCareResult } from '../../api';
+import { getPets, deletePet as apiDeletePet, reorderPets as apiReorderPets, getEvents, getWeightLogs } from '../../api';
 import { Pet, PetStatus } from '../../types';
 import { buildPetColorMap } from '../../constants/petColors';
 import { useUser } from '../../context/UserContext';
@@ -61,7 +60,11 @@ export default function MyPetsScreen({ navigation }: Props) {
 
     const overrides: Record<string, { status: PetStatus; statusLabel: string }> = {};
 
-    for (const pet of petsList) {
+    // 體重過重/過瘦需要觸診才能判斷，AI 光憑數字給的「理想範圍」不夠可靠；
+    // 改成跟上一筆紀錄比較，變化幅度超過 5% 才提醒使用者留意，不做「胖/瘦」的診斷式判斷
+    const weightLogResults = await Promise.all(petsList.map((pet) => getWeightLogs(pet.id)));
+
+    petsList.forEach((pet, i) => {
       const dueEvent = events.find((e) =>
         (e.petId === pet.id || e.petId === 'all') &&
         (e.category === 'vet' || e.category === 'medication') &&
@@ -70,23 +73,26 @@ export default function MyPetsScreen({ navigation }: Props) {
       );
 
       let weightStatus: { status: PetStatus; statusLabel: string } | null = null;
-      try {
-        const cached = await AsyncStorage.getItem(`ai_care_v3_${pet.id}_${todayStr}`);
-        if (cached) {
-          const aiCare = JSON.parse(cached) as AiCareResult;
-          if (aiCare.idealWeightMin != null && pet.weightKg < aiCare.idealWeightMin) {
-            weightStatus = { status: 'warning', statusLabel: '體重偏輕' };
-          } else if (aiCare.idealWeightMax != null && pet.weightKg > aiCare.idealWeightMax) {
-            weightStatus = { status: 'warning', statusLabel: '體重偏重' };
+      const logsRes = weightLogResults[i];
+      if (logsRes.success && logsRes.data.length >= 2) {
+        const [latest, previous] = logsRes.data; // API 回傳新到舊排序
+        if (previous.weightKg > 0) {
+          const changePct = ((latest.weightKg - previous.weightKg) / previous.weightKg) * 100;
+          if (Math.abs(changePct) >= 5) {
+            const rounded = Math.abs(changePct).toFixed(1);
+            weightStatus = {
+              status: 'warning',
+              statusLabel: changePct > 0 ? `體重上升 ${rounded}%` : `體重下降 ${rounded}%`,
+            };
           }
         }
-      } catch {}
+      }
 
       overrides[pet.id] = {
         status: dueEvent ? 'due_soon' : (weightStatus?.status ?? 'healthy'),
         statusLabel: dueEvent ? `「${dueEvent.title}」時間快到了` : (weightStatus?.statusLabel ?? '健康'),
       };
-    }
+    });
 
     setStatusOverrides(overrides);
   };

@@ -114,6 +114,38 @@ export interface WeightLog {
   recordedAt: string; // ISO date string
 }
 
+export interface LabResultItem {
+  itemName: string;
+  abbreviation?: string;
+  value: number;
+  unit: string;
+  refRange?: string;
+  status: 'NORMAL' | 'HIGH' | 'LOW' | 'UNKNOWN';
+  plainExplanation: string;
+}
+
+export interface Medication {
+  name: string;
+  dosage?: string;
+  frequency?: string;
+  notes?: string;
+}
+
+export interface VetVisit {
+  id: string;
+  petId: string;
+  visitDate: string; // ISO date string
+  clinicName: string;
+  diagnosisNote: string;
+  imageUrl: string;
+  reportType: string;
+  items: LabResultItem[];
+  medications: Medication[];
+  summaryAdvice: string;
+  calendarEventId?: string | null;
+  createdAt: string;
+}
+
 export interface DiaryEntry {
   id: string;
   petId: string;

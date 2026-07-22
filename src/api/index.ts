@@ -9,7 +9,7 @@ import {
   MOCK_POSTS,
   MOCK_DIARY_ENTRIES,
 } from './mockData';
-import { ApiResponse, Pet, PetStatus, AiMessage, Conversation, DiaryEntry, CalendarEvent, WeightLog, Post, User } from '../types';
+import { ApiResponse, Pet, PetStatus, AiMessage, Conversation, DiaryEntry, CalendarEvent, WeightLog, Post, User, VetVisit, LabResultItem, Medication } from '../types';
 import * as SecureStore from 'expo-secure-store';
 import * as FileSystem from 'expo-file-system/legacy';
 import client, { TOKEN_KEY, BASE_URL } from './client';
@@ -118,9 +118,21 @@ export interface AiCareResult {
 
 // GET /api/v1/pets/:id/ai-care
 export async function getAiCare(petId: string): Promise<ApiResponse<AiCareResult>> {
-  const res = await client.get(`/pets/${petId}/ai-care`);
-  if (!res.data.success) return { success: false, data: null as any, message: res.data.message };
-  return { success: true, data: res.data.data as AiCareResult, message: '' };
+  try {
+    const res = await client.get(`/pets/${petId}/ai-care`);
+    if (!res.data.success) return { success: false, data: null as any, message: res.data.message };
+    return { success: true, data: res.data.data as AiCareResult, message: '' };
+  } catch (e: any) {
+    if (e?.response?.status === 429) {
+      let msg = e.response.data?.message ?? 'AI 對話次數已達上限，請稍後再試';
+      const resetSec = Number(e.response.headers?.['ratelimit-reset']);
+      if (Number.isFinite(resetSec) && resetSec > 0) {
+        msg += `（約 ${Math.ceil(resetSec / 60)} 分鐘後可再試）`;
+      }
+      return { success: false, data: null as any, message: msg };
+    }
+    throw e;
+  }
 }
 
 
@@ -178,6 +190,80 @@ export async function addWeightLog(petId: string, weightKg: number): Promise<Api
   const res = await client.post(`/pets/${petId}/weight-logs`, { weightKg });
   if (!res.data.success) return { success: false, data: null as any, message: res.data.message };
   return { success: true, data: res.data.data as WeightLog, message: '' };
+}
+
+// ─── Vet Visits（就醫紀錄）──────────────────────────────────────────────────────
+
+function mapVetVisit(r: any): VetVisit {
+  return {
+    id: String(r.id ?? r._id),
+    petId: typeof r.petId === 'string' ? r.petId : String(r.petId),
+    visitDate: r.visitDate,
+    clinicName: r.clinicName ?? '',
+    diagnosisNote: r.diagnosisNote ?? '',
+    imageUrl: r.imageUrl ?? '',
+    reportType: r.reportType ?? '',
+    items: r.items ?? [],
+    medications: r.medications ?? [],
+    summaryAdvice: r.summaryAdvice ?? '',
+    calendarEventId: r.calendarEventId ?? null,
+    createdAt: r.createdAt,
+  };
+}
+
+export interface ParsedVisitReportDraft {
+  imageUrl: string;
+  reportType: string;
+  items: LabResultItem[];
+  summaryAdvice: string;
+}
+
+// POST /api/v1/pets/:id/vet-visits/parse-report
+export async function parseVisitReport(
+  petId: string,
+  image: { uri: string; name: string; type: string }
+): Promise<ApiResponse<ParsedVisitReportDraft>> {
+  const form = new FormData();
+  form.append('image', { uri: image.uri, name: image.name, type: image.type } as any);
+  const res = await client.post(`/pets/${petId}/vet-visits/parse-report`, form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  if (!res.data.success) return { success: false, data: null as any, message: res.data.message };
+  return { success: true, data: res.data.data as ParsedVisitReportDraft, message: '' };
+}
+
+// POST /api/v1/pets/:id/vet-visits
+export async function createVetVisit(
+  petId: string,
+  payload: {
+    visitDate: string;
+    clinicName?: string;
+    diagnosisNote?: string;
+    medications?: Medication[];
+    imageUrl?: string;
+    reportType?: string;
+    items?: LabResultItem[];
+    summaryAdvice?: string;
+    syncToCalendar?: boolean;
+  }
+): Promise<ApiResponse<VetVisit>> {
+  const res = await client.post(`/pets/${petId}/vet-visits`, payload);
+  if (!res.data.success) return { success: false, data: null as any, message: res.data.message };
+  return { success: true, data: mapVetVisit(res.data.data), message: '' };
+}
+
+// GET /api/v1/pets/:id/vet-visits
+export async function getVetVisits(petId: string): Promise<ApiResponse<VetVisit[]>> {
+  const res = await client.get(`/pets/${petId}/vet-visits`);
+  if (!res.data.success) return { success: false, data: [], message: res.data.message };
+  return { success: true, data: res.data.data.map(mapVetVisit), message: '' };
+}
+
+// DELETE /api/v1/pets/:id/vet-visits/:visitId
+export async function deleteVetVisit(petId: string, visitId: string): Promise<ApiResponse<null>> {
+  const res = await client.delete(`/pets/${petId}/vet-visits/${visitId}`);
+  if (!res.data.success) return { success: false, data: null, message: res.data.message };
+  return { success: true, data: null, message: '' };
 }
 
 // ─── Diary ────────────────────────────────────────────────────────────────────
@@ -655,6 +741,19 @@ export async function streamAiMessage(
   }
 
   if (!response.ok || !response.body) {
+    if (response.status === 429) {
+      let msg = 'AI 對話次數已達上限，請稍後再試';
+      try {
+        const errData = await response.json();
+        if (errData?.message) msg = errData.message;
+      } catch {}
+      const resetSec = Number(response.headers.get('RateLimit-Reset'));
+      if (Number.isFinite(resetSec) && resetSec > 0) {
+        msg += `（約 ${Math.ceil(resetSec / 60)} 分鐘後可再試）`;
+      }
+      callbacks.onError(msg);
+      return;
+    }
     callbacks.onError('AI 助理暫時無法回應，請稍後再試。');
     return;
   }

@@ -35,6 +35,7 @@ import MapScreen from '../screens/main/MapScreen';
 import CalendarScreen from '../screens/main/CalendarScreen';
 import PetDetailScreen from '../screens/main/PetDetailScreen';
 import DailyLogScreen from '../screens/main/DailyLogScreen';
+import VetVisitsScreen from '../screens/main/VetVisitsScreen';
 import PetCareGuideScreen from '../screens/main/PetCareGuideScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -197,6 +198,11 @@ export default function AppNavigation() {
         <Stack.Screen
           name="DailyLog"
           component={DailyLogScreen}
+          options={{ animation: 'slide_from_right' }}
+        />
+        <Stack.Screen
+          name="VetVisits"
+          component={VetVisitsScreen}
           options={{ animation: 'slide_from_right' }}
         />
         <Stack.Screen

@@ -468,6 +468,8 @@ export default function PetDetailScreen({ navigation, route }: Props) {
       if (res.success) {
         applyAiCareResult(res.data);
         try { await AsyncStorage.setItem(cacheKey, JSON.stringify(res.data)); } catch {}
+      } else if (res.message) {
+        Alert.alert('AI 照護建議', res.message);
       }
     } catch {
       // 網路或伺服器錯誤時保持原本的建議清單，不整頁報錯
@@ -641,6 +643,25 @@ export default function PetDetailScreen({ navigation, route }: Props) {
               <MaterialIcons name="chevron-right" size={24} color={Colors.outline} />
             </Card>
           )}
+        </TouchableOpacity>
+
+        {/* ── Vet visits entry card ── */}
+        <TouchableOpacity
+          activeOpacity={0.88}
+          onPress={() => navigation.navigate('VetVisits', { petId: pet.id, petName: pet.name })}
+        >
+          <Card style={styles.logCard}>
+            <View style={styles.logLeft}>
+              <View style={[styles.logThumb, styles.logThumbEmpty]}>
+                <MaterialIcons name="description" size={22} color={Colors.outline} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.logTitle}>就醫紀錄</Text>
+                <Text style={styles.logSub}>記錄看診內容、用藥與檢驗報告</Text>
+              </View>
+            </View>
+            <MaterialIcons name="chevron-right" size={24} color={Colors.outline} />
+          </Card>
         </TouchableOpacity>
 
         {/* ── AI Daily Care card ── */}
