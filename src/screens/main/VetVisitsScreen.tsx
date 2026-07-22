@@ -24,8 +24,14 @@ import { RootStackParamList } from '../../types/navigation';
 import Card from '../../components/ui/Card';
 import { Colors } from '../../constants/colors';
 import { FontFamily, FontSize } from '../../constants/typography';
-import { getVetVisits, parseVisitReport, createVetVisit, ParsedVisitReportDraft } from '../../api';
+import { getVetVisits, parseVisitReport, getVisitParseJob, createVetVisit } from '../../api';
 import { VetVisit, LabResultItem, Medication } from '../../types';
+
+interface ReportDraft {
+  imageUrl: string;
+  reportType: string;
+  summaryAdvice: string;
+}
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList>;
@@ -60,9 +66,10 @@ export default function VetVisitsScreen({ navigation, route }: Props) {
   const [diagnosisNote, setDiagnosisNote] = useState('');
   const [medications, setMedications] = useState<Medication[]>([]);
   const [syncToCalendar, setSyncToCalendar] = useState(true);
-  const [draft, setDraft] = useState<ParsedVisitReportDraft | null>(null);
+  const [draft, setDraft] = useState<ReportDraft | null>(null);
   const [draftItems, setDraftItems] = useState<LabResultItem[]>([]);
   const slideAnim = useRef(new Animated.Value(500)).current;
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const load = () => {
     getVetVisits(petId).then((res) => {
@@ -71,6 +78,50 @@ export default function VetVisitsScreen({ navigation, route }: Props) {
   };
 
   useEffect(() => { load(); }, [petId]);
+
+  const stopPolling = () => {
+    if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+  };
+  useEffect(() => stopPolling, []);
+
+  // 檢查一次背景解析工作的狀態；ready/failed 回傳結果讓呼叫端決定要不要停止輪詢
+  const checkParseJob = async (jobId: string): Promise<'ready' | 'failed' | 'processing'> => {
+    const res = await getVisitParseJob(petId, jobId);
+    if (!res.success) return 'processing'; // 網路暫時失敗，下一輪再試
+    if (res.data.status === 'ready') {
+      setDraft({ imageUrl: res.data.imageUrl, reportType: res.data.reportType, summaryAdvice: res.data.summaryAdvice });
+      setDraftItems(res.data.items);
+      return 'ready';
+    }
+    if (res.data.status === 'failed') {
+      Alert.alert('解析失敗', res.data.errorMessage || '請稍後再試');
+      return 'failed';
+    }
+    return 'processing';
+  };
+
+  const pollParseJob = (jobId: string) => {
+    stopPolling();
+    setParsing(true);
+    const tick = async () => {
+      const result = await checkParseJob(jobId);
+      if (result !== 'processing') {
+        stopPolling();
+        setParsing(false);
+      }
+    };
+    tick();
+    pollRef.current = setInterval(tick, 4000);
+  };
+
+  // 從推播通知點進來時，畫面一開就自動打開表單並接續查詢那個解析工作
+  useEffect(() => {
+    if (route.params.pendingJobId) {
+      openForm();
+      pollParseJob(route.params.pendingJobId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [route.params.pendingJobId]);
 
   const openForm = () => {
     setDateParts(todayParts());
@@ -85,6 +136,8 @@ export default function VetVisitsScreen({ navigation, route }: Props) {
   };
 
   const closeForm = () => {
+    stopPolling();
+    setParsing(false);
     Animated.timing(slideAnim, { toValue: 500, duration: 240, useNativeDriver: true })
       .start(() => setFormVisible(false));
   };
@@ -103,23 +156,17 @@ export default function VetVisitsScreen({ navigation, route }: Props) {
     if (result.canceled) return;
     const asset = result.assets[0];
 
-    setParsing(true);
     try {
       const res = await parseVisitReport(petId, { uri: asset.uri, name: asset.fileName ?? 'report.jpg', type: asset.mimeType ?? 'image/jpeg' });
       if (res.success) {
-        if (res.data.items.length === 0) {
-          Alert.alert('無法辨識', '這張照片看起來沒有可辨識的數值型檢驗項目，請確認是血檢/生化等報告照片。');
-          return;
-        }
-        setDraft(res.data);
-        setDraftItems(res.data.items);
+        // 不等解析完成——後端在背景跑，這裡開始輪詢；使用者可以繼續填其他欄位，
+        // 也可以直接關掉表單離開，解析完成後會收到推播通知
+        pollParseJob(res.data.jobId);
       } else {
-        Alert.alert('解析失敗', res.message || '請稍後再試');
+        Alert.alert('上傳失敗', res.message || '請稍後再試');
       }
     } catch {
-      Alert.alert('解析失敗', '網路錯誤，請稍後再試');
-    } finally {
-      setParsing(false);
+      Alert.alert('上傳失敗', '網路錯誤，請稍後再試');
     }
   };
 
@@ -334,20 +381,15 @@ export default function VetVisitsScreen({ navigation, route }: Props) {
                     <Image source={{ uri: draft.imageUrl }} style={styles.previewImg} />
                     <Text style={styles.reportAttachedText}>已附上 {draftItems.length} 項檢驗數值</Text>
                   </View>
+                ) : parsing ? (
+                  <View style={styles.parsingRow}>
+                    <ActivityIndicator color={Colors.primary} />
+                    <Text style={styles.parsingText}>AI 正在背景解析報告，可以先繼續填寫其他欄位，完成後會推播通知你，也可以先關閉這個視窗</Text>
+                  </View>
                 ) : (
-                  <TouchableOpacity
-                    style={[styles.uploadReportBtn, parsing && { opacity: 0.6 }]}
-                    onPress={showPickerOptions}
-                    disabled={parsing}
-                  >
-                    {parsing ? (
-                      <ActivityIndicator color={Colors.primary} />
-                    ) : (
-                      <>
-                        <MaterialIcons name="add-a-photo" size={18} color={Colors.primary} />
-                        <Text style={styles.uploadReportBtnLabel}>上傳檢驗報告，AI 自動解析</Text>
-                      </>
-                    )}
+                  <TouchableOpacity style={styles.uploadReportBtn} onPress={showPickerOptions}>
+                    <MaterialIcons name="add-a-photo" size={18} color={Colors.primary} />
+                    <Text style={styles.uploadReportBtnLabel}>上傳檢驗報告，AI 自動解析</Text>
                   </TouchableOpacity>
                 )}
               </View>
@@ -471,6 +513,11 @@ const styles = StyleSheet.create({
   },
   uploadReportBtnLabel: { fontFamily: FontFamily.headlineMedium, fontSize: FontSize.labelMD, color: Colors.primary },
   reportAttached: { gap: 8 },
+  parsingRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: Colors.surfaceContainerHigh, borderRadius: 14, padding: 14,
+  },
+  parsingText: { flex: 1, fontFamily: FontFamily.bodyMedium, fontSize: FontSize.labelMD, color: Colors.onSurfaceVariant, lineHeight: 20 },
   reportAttachedText: { fontFamily: FontFamily.bodyMedium, fontSize: FontSize.labelMD, color: Colors.onSurfaceVariant },
 
   editItemCard: { backgroundColor: Colors.surfaceContainerHigh, borderRadius: 16, padding: 14, marginBottom: 12, gap: 8 },

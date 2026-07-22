@@ -11,7 +11,7 @@ export type RootStackParamList = {
   Profile: { postId?: string } | undefined;
   PetDetail: { petId: string };
   DailyLog: { petId: string; petName: string };
-  VetVisits: { petId: string; petName: string };
+  VetVisits: { petId: string; petName: string; pendingJobId?: string };
   NotificationSettings: undefined;
   PrivacySecurity: undefined;
   HelpSupport: undefined;

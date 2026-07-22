@@ -211,25 +211,37 @@ function mapVetVisit(r: any): VetVisit {
   };
 }
 
-export interface ParsedVisitReportDraft {
+export interface VisitParseJobStatus {
+  jobId: string;
+  status: 'processing' | 'ready' | 'failed';
   imageUrl: string;
   reportType: string;
   items: LabResultItem[];
   summaryAdvice: string;
+  errorMessage: string;
 }
 
-// POST /api/v1/pets/:id/vet-visits/parse-report
+// POST /api/v1/pets/:id/vet-visits/parse-report — 立刻回應 jobId，實際解析在後端背景進行，
+// 完成後會推播通知，不需要前端一直卡在這支請求上等
 export async function parseVisitReport(
   petId: string,
   image: { uri: string; name: string; type: string }
-): Promise<ApiResponse<ParsedVisitReportDraft>> {
+): Promise<ApiResponse<{ jobId: string }>> {
   const form = new FormData();
   form.append('image', { uri: image.uri, name: image.name, type: image.type } as any);
   const res = await client.post(`/pets/${petId}/vet-visits/parse-report`, form, {
     headers: { 'Content-Type': 'multipart/form-data' },
   });
   if (!res.data.success) return { success: false, data: null as any, message: res.data.message };
-  return { success: true, data: res.data.data as ParsedVisitReportDraft, message: '' };
+  return { success: true, data: { jobId: String(res.data.data.jobId) }, message: '' };
+}
+
+// GET /api/v1/pets/:id/vet-visits/parse-jobs/:jobId — 查詢背景解析工作目前的狀態，
+// 畫面還開著時可以輪詢，或使用者點通知回來時用來讀取已完成的結果
+export async function getVisitParseJob(petId: string, jobId: string): Promise<ApiResponse<VisitParseJobStatus>> {
+  const res = await client.get(`/pets/${petId}/vet-visits/parse-jobs/${jobId}`);
+  if (!res.data.success) return { success: false, data: null as any, message: res.data.message };
+  return { success: true, data: res.data.data as VisitParseJobStatus, message: '' };
 }
 
 // POST /api/v1/pets/:id/vet-visits

@@ -72,7 +72,7 @@ export interface CalendarEvent {
 
 export interface Notification {
   id: string;
-  type: 'like' | 'comment' | 'health_reminder' | 'milestone' | 'lost_pet';
+  type: 'like' | 'comment' | 'health_reminder' | 'milestone' | 'lost_pet' | 'vet_visit_parsed';
   title: string;
   body: string;
   read: boolean;

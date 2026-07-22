@@ -65,6 +65,14 @@ function getConfig(type: Notification['type']): NotifConfig {
         labelColor: Colors.primary,
         label: '留言',
       };
+    case 'vet_visit_parsed':
+      return {
+        icon: 'description',
+        iconColor: Colors.primary,
+        iconBg: Colors.primaryFixed,
+        labelColor: Colors.primary,
+        label: '就醫紀錄',
+      };
     case 'milestone':
     default:
       return {
@@ -149,6 +157,13 @@ export default function NotificationsScreen({ navigation }: Props) {
         break;
       case 'lost_pet':
         navigation.navigate('MainTabs', { screen: 'Community' } as any);
+        break;
+      case 'vet_visit_parsed':
+        if (n.data?.petId && n.data?.petName) {
+          navigation.navigate('VetVisits', { petId: n.data.petId, petName: n.data.petName, pendingJobId: n.data?.jobId });
+        } else {
+          navigation.navigate('MainTabs', { screen: 'MyPets' } as any);
+        }
         break;
     }
   };
