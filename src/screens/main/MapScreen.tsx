@@ -9,6 +9,7 @@ import {
   Linking,
   Platform,
   Image,
+  ActivityIndicator,
 } from 'react-native';
 import ClusteredMapView from 'react-native-map-clustering';
 import { Marker } from 'react-native-maps';
@@ -20,7 +21,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { MaterialIcons } from '@expo/vector-icons';
 import { Colors } from '../../constants/colors';
 import { FontFamily, FontSize } from '../../constants/typography';
-import { getNearbyPlaces, getMapFavorites, addMapFavorite, removeMapFavorite } from '../../api';
+import { getNearbyPlaces, getMapFavorites, addMapFavorite, removeMapFavorite, ApiPlace } from '../../api';
 import { BASE_URL } from '../../api/client';
 import { RootStackParamList } from '../../types/navigation';
 
@@ -330,6 +331,22 @@ void ([
   },
 ] as Place[]);
 
+// 切分類時常常只是回到剛剛看過的分類，或地圖根本沒動，快取幾分鐘可以避免重打一樣的請求；
+// 經緯度四捨五入到小數點後 3 位（約 111m），半徑取整到 500m 一階，這樣同一個分類來回切換時容易命中快取
+const PLACES_CACHE_TTL_MS = 3 * 60 * 1000;
+
+function placesCacheKey(
+  center: { latitude: number; longitude: number; radiusM: number },
+  apiType: string | undefined,
+  is24hr: boolean,
+  exotic: boolean
+): string {
+  const lat = center.latitude.toFixed(3);
+  const lng = center.longitude.toFixed(3);
+  const radius = Math.round(center.radiusM / 500) * 500;
+  return `${apiType ?? 'all'}|${is24hr}|${exotic}|${lat}|${lng}|${radius}`;
+}
+
 const TAIPEI_REGION = {
   latitude: 25.037,
   longitude: 121.548,
@@ -366,6 +383,8 @@ export default function MapScreen() {
   const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const [mapCenter, setMapCenter] = useState({ latitude: TAIPEI_REGION.latitude, longitude: TAIPEI_REGION.longitude, radiusM: 5000 });
   const [places, setPlaces] = useState<Place[]>([]);
+  const [placesLoading, setPlacesLoading] = useState(false);
+  const placesCacheRef = useRef<Map<string, { raw: ApiPlace[]; timestamp: number }>>(new Map());
   const [favoriteIds, setFavoriteIds] = useState<Set<string>>(new Set());
   const [favoritePlaces, setFavoritePlaces] = useState<Place[]>([]);
   const [showFavorites, setShowFavorites] = useState(false);
@@ -440,18 +459,33 @@ export default function MapScreen() {
     setMapCenter({ latitude: region.latitude, longitude: region.longitude, radiusM });
   };
 
-  // 地圖中心或篩選變更時重新查詢（cleanup 避免過期請求覆蓋新結果）
+  // 地圖中心或篩選變更時重新查詢（cleanup 避免過期請求覆蓋新結果）；
+  // 先查記憶體快取，命中就直接套用不用打 API，切分類來回切換會感覺是即時的
   useEffect(() => {
     let cancelled = false;
     const apiType = activeFilter !== 'all' ? CATEGORY_TO_APITYPE[activeFilter] : undefined;
+    const key = placesCacheKey(mapCenter, apiType, is24hrOnly, exoticOnly);
+    const cached = placesCacheRef.current.get(key);
+
+    // distance 永遠用「目前」的 userLocation 現算，即使套用快取也不會顯示過期的距離
+    const applyRaw = (raw: ApiPlace[]) => setPlaces(raw.map((r) => mapApiPlace(r, userLocation ?? undefined)));
+
+    if (cached && Date.now() - cached.timestamp < PLACES_CACHE_TTL_MS) {
+      applyRaw(cached.raw);
+      return;
+    }
+
+    setPlacesLoading(true);
     getNearbyPlaces(mapCenter.latitude, mapCenter.longitude, apiType, mapCenter.radiusM, is24hrOnly, exoticOnly)
       .then((res) => {
-        if (!cancelled && res.success)
-          setPlaces(res.data.map((r) => mapApiPlace(r, userLocation ?? undefined)));
+        if (cancelled || !res.success) return;
+        placesCacheRef.current.set(key, { raw: res.data, timestamp: Date.now() });
+        applyRaw(res.data);
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setPlacesLoading(false); });
     return () => { cancelled = true; };
-  }, [mapCenter, activeFilter, is24hrOnly, exoticOnly]);
+  }, [mapCenter, activeFilter, is24hrOnly, exoticOnly, userLocation]);
 
   // Animate preview card in/out
   useEffect(() => {
@@ -628,6 +662,13 @@ export default function MapScreen() {
             );
           })}
         </ScrollView>
+
+        {placesLoading && (
+          <View style={styles.loadingNotice}>
+            <ActivityIndicator size="small" color={Colors.primary} />
+            <Text style={styles.loadingNoticeText}>搜尋店家中...</Text>
+          </View>
+        )}
 
         {activeFilter === 'restaurant' && (
           <View style={styles.restaurantNotice}>
@@ -1195,6 +1236,28 @@ const styles = StyleSheet.create({
     right: 0,
     zIndex: 10,
     gap: 8,
+  },
+  loadingNotice: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    alignSelf: 'center',
+    backgroundColor: Colors.surfaceContainerLowest,
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderWidth: 1,
+    borderColor: Colors.outlineVariant,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  loadingNoticeText: {
+    fontFamily: FontFamily.bodyMedium,
+    fontSize: 11,
+    color: Colors.onSurfaceVariant,
   },
   restaurantNotice: {
     flexDirection: 'row',
