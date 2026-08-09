@@ -89,16 +89,28 @@ export type ThemeColors = {
   careGuide: string;
   onCareGuide: string;
 
-  /* --- 合作夥伴的金色語彙 --- */
   /**
-   * 強調條與 pin 外框。刻意跟分類色系脫鉤 —— 使用者掃過地圖時
-   * 「金色 = 合作夥伴」，不用管它原本是醫院還是用品店。
-   * 暖橘主題下不能用亮金：#f9a825 在 #fff8f5 上只有 1.88，看不見。
+   * 合作夥伴徽章。刻意跟分類色系脫鉤 —— 掃過地圖時「金色 = 合作夥伴」，
+   * 不用管它原本是醫院還是用品店。
+   * 暖橘主題下不能用亮金當前景：#f9a825 在 #fff8f5 上只有 1.88，看不見；
+   * 所以是「金底 + 深色圖示」而不是「金色圖示」。
    */
-  partnerAccent: string;
-  /** 徽章底色（實心），比 accent 亮，配深色文字 */
   partnerBadge: string;
   onPartnerBadge: string;
+  /**
+   * 合作夥伴卡片專屬的 CTA 色。刻意不用 primary 的高飽和橘棕 ——
+   * 兩顆大按鈕佔卡片下方三分之一，飽和色會把視覺重量全吸過去。
+   * 降飽和提對比後，照片與金色徽章才會是畫面上唯一的暖色。
+   * 深色主題要反過來（深底配淺鈕），不能沿用深咖啡。
+   */
+  partnerCta: string;
+  onPartnerCta: string;
+  /**
+   * 合作夥伴 pin 被選中時的外框。白色本身對比極低（對內圈 1.29、對地圖 1.15），
+   * 靠的是搭配的陰影撐出立體感 —— 跟 Google / Apple 地圖同一套手法。
+   * 兩個主題都用白，因為深色地圖上白框反而更明顯。
+   */
+  partnerRing: string;
 };
 
 /* ------------------------------------------------------------------ *
@@ -171,9 +183,11 @@ export const warmColors: ThemeColors = {
   catHotelBg: '#d3e4cd',
   careGuide: '#006000',
   onCareGuide: '#ffffff',
-  partnerAccent: '#a06800',
   partnerBadge: '#e8b04b',
   onPartnerBadge: '#3d2a00',
+  partnerCta: '#2e1c0d',
+  onPartnerCta: '#ffffff',
+  partnerRing: '#ffffff',
 };
 
 /* ------------------------------------------------------------------ *
@@ -249,9 +263,11 @@ export const darkColors: ThemeColors = {
   catHotelBg: '#1f3329',
   careGuide: '#7fca9b',
   onCareGuide: '#00391a',
-  partnerAccent: '#f0c060',
   partnerBadge: '#f0c060',
   onPartnerBadge: '#3a2a00',
+  partnerCta: '#e8e2d8',
+  onPartnerCta: '#231a10',
+  partnerRing: '#ffffff',
 };
 
 /* ------------------------------------------------------------------ */

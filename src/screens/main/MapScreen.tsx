@@ -633,6 +633,9 @@ export default function MapScreen() {
                     styles.pinInner,
                     { backgroundColor: cfg.bgColor },
                     isSelected && styles.pinInnerSelected,
+                    // 合作夥伴選中時外框改金色，跟徽章同一套語彙；
+                    // 一般地點維持 primary，兩者一眼分得出來
+                    isSelected && place.isPartner && styles.pinInnerSelectedPartner,
                   ]}
                 >
                   <MaterialIcons name={cfg.icon} size={isSelected ? 22 : 18} color={cfg.iconColor} />
@@ -1043,7 +1046,7 @@ function PartnerPlaceCard({
 
         {/* Partner badge */}
         <View style={styles.heroPartnerBadge}>
-          <MaterialIcons name="verified" size={11} color={colors.onPrimary} />
+          <MaterialIcons name="star" size={11} color={colors.onPartnerBadge} />
           <Text style={styles.heroPartnerText}>合作夥伴</Text>
         </View>
 
@@ -1144,17 +1147,13 @@ function PartnerPlaceCard({
 
         {/* Buttons */}
         <View style={styles.partnerButtons}>
-          {/*
-            主副層級：「立即聯絡」才是合作夥伴的加值，所以它是實心主要按鈕；
-            導航到處都有，退成外框次要按鈕。原本是反過來的。
-          */}
-          <TouchableOpacity style={styles.btnCallPrimary} onPress={() => place.phone && Linking.openURL(`tel:${place.phone}`)} activeOpacity={0.85}>
-            <MaterialIcons name="phone" size={14} color={colors.onPrimary} />
-            <Text style={styles.btnCallPrimaryText}>立即聯絡</Text>
+          <TouchableOpacity style={styles.btnPartnerSolid} onPress={() => onNavigate(place)} activeOpacity={0.85}>
+            <MaterialIcons name="map" size={14} color={colors.onPartnerCta} />
+            <Text style={styles.btnPartnerSolidText}>Google Maps</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.btnMapsOutline} onPress={() => onNavigate(place)} activeOpacity={0.85}>
-            <MaterialIcons name="map" size={14} color={colors.primary} />
-            <Text style={styles.btnMapsOutlineText}>Google Maps</Text>
+          <TouchableOpacity style={styles.btnPartnerOutline} onPress={() => place.phone && Linking.openURL(`tel:${place.phone}`)} activeOpacity={0.85}>
+            <MaterialIcons name="phone" size={14} color={colors.partnerCta} />
+            <Text style={styles.btnPartnerOutlineText}>立即聯絡</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -1437,6 +1436,18 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     borderWidth: 3,
     borderColor: c.primary,
   },
+  pinInnerSelectedPartner: {
+    // 白框對淺桃內圈只有 1.29、對地圖底 1.15，單靠顏色會消失。
+    // Google / Apple 地圖的白框是靠陰影撐出來的，不是靠對比 ——
+    // 所以這裡必須連陰影一起給，拿掉陰影這個樣式就失效。
+    borderWidth: 5,
+    borderColor: c.partnerRing,
+    shadowColor: '#000',
+    shadowOpacity: 0.35,
+    shadowRadius: 5,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 6,
+  },
   // 星星本身有縫隙，直接放在地圖上會糊掉 —— 外面包一個 primary 圓底，
   // 再用底色描邊跟地圖分離，跟原本的圓點一樣醒目但語意更明確
   partnerStar: {
@@ -1497,9 +1508,36 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  partnerAccentBar: {
-    height: 4,
-    backgroundColor: c.partnerAccent,
+  btnPartnerSolid: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    backgroundColor: c.partnerCta,
+    paddingVertical: 9,
+    borderRadius: 10,
+  },
+  btnPartnerSolidText: {
+    fontFamily: FontFamily.headlineSemiBold,
+    fontSize: FontSize.labelMD,
+    color: c.onPartnerCta,
+  },
+  btnPartnerOutline: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    borderWidth: 1.5,
+    borderColor: c.partnerCta,
+    paddingVertical: 9,
+    borderRadius: 10,
+  },
+  btnPartnerOutlineText: {
+    fontFamily: FontFamily.headlineSemiBold,
+    fontSize: FontSize.labelMD,
+    color: c.partnerCta,
   },
   partnerBadge: {
     position: 'absolute',
@@ -1565,37 +1603,6 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-  },
-  btnCallPrimary: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 5,
-    backgroundColor: c.primary,
-    paddingVertical: 9,
-    borderRadius: 10,
-  },
-  btnCallPrimaryText: {
-    fontFamily: FontFamily.headlineSemiBold,
-    fontSize: FontSize.labelMD,
-    color: c.onPrimary,
-  },
-  btnMapsOutline: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 5,
-    borderWidth: 1.5,
-    borderColor: c.primary,
-    paddingVertical: 9,
-    borderRadius: 10,
-  },
-  btnMapsOutlineText: {
-    fontFamily: FontFamily.headlineSemiBold,
-    fontSize: FontSize.labelMD,
-    color: c.primary,
   },
   btnMaps: {
     flex: 1,
@@ -1683,7 +1690,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: c.primary,
+    backgroundColor: c.partnerBadge,
     paddingHorizontal: 9,
     paddingVertical: 4,
     borderRadius: 9999,
@@ -1691,7 +1698,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   heroPartnerText: {
     fontFamily: FontFamily.headlineBold,
     fontSize: 10,
-    color: c.onPrimary,
+    color: c.onPartnerBadge,
   },
   heroRatingBadge: {
     position: 'absolute',
