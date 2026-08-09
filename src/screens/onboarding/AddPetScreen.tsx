@@ -18,7 +18,8 @@ import * as ImagePicker from 'expo-image-picker';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RouteProp } from '@react-navigation/native';
 import { RootStackParamList } from '../../types/navigation';
-import { Colors } from '../../constants/colors';
+import { ThemeColors } from '../../constants/themes';
+import { useTheme, useThemedStyles } from '../../context/ThemeContext';
 import { FontFamily, FontSize } from '../../constants/typography';
 import { addPet } from '../../api';
 import { Species, Gender } from '../../types';
@@ -55,6 +56,8 @@ const BREEDS: Record<Species, string[]> = {
 };
 
 export default function AddPetScreen({ navigation }: Props) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const insets = useSafeAreaInsets();
 
   const [name, setName]           = useState('');
@@ -79,6 +82,9 @@ export default function AddPetScreen({ navigation }: Props) {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
       allowsEditing: true,
+      // iOS 會忽略 aspect（裁切框一律正方形），但 Android 吃這個設定，
+      // 讓它跟 PetCard 的 16:9 對齊，Android 上就是所見即所得
+      aspect: [16, 9],
       quality: 0.8,
     });
     if (!result.canceled) setPhotoUri(result.assets[0].uri);
@@ -107,16 +113,22 @@ export default function AddPetScreen({ navigation }: Props) {
 
   const handleSubmit = async () => {
     if (!name.trim()) return;
+
+    // 體重在後端是必填。原本留空會送出 "0"（`weightInKg || 0`），後端的
+    // `weight == null` 檢查抓不到字串 "0"，結果靜默存成 0 公斤 ——
+    // 那個值會流進體重紀錄與 AI 照護建議的熱量計算。
+    if (weightKg.trim() === '') {
+      Alert.alert('請輸入體重', '體重是必填的，之後的體重紀錄與 AI 照護建議都會用到。');
+      return;
+    }
     const enteredWeight = parseFloat(weightKg);
     const weightInKg = weightUnit === 'g' ? enteredWeight / 1000 : enteredWeight;
-    if (weightKg.trim() !== '') {
-      if (isNaN(weightInKg) || weightInKg < 0.01 || weightInKg > 200) {
-        Alert.alert(
-          '體重範圍錯誤',
-          weightUnit === 'g' ? '請輸入 10–200000 g 的合理數值' : '請輸入 0.01–200 kg 的合理數值'
-        );
-        return;
-      }
+    if (isNaN(weightInKg) || weightInKg < 0.01 || weightInKg > 200) {
+      Alert.alert(
+        '體重範圍錯誤',
+        weightUnit === 'g' ? '請輸入 10–200000 g 的合理數值' : '請輸入 0.01–200 kg 的合理數值'
+      );
+      return;
     }
     setLoading(true);
     try {
@@ -133,7 +145,7 @@ export default function AddPetScreen({ navigation }: Props) {
         formData.append('joinedFamilyAt', joinedFamilyAt);
       }
       formData.append('gender', gender);
-      formData.append('weight', String(weightInKg || 0));
+      formData.append('weight', String(weightInKg));
       if (photoUri) {
         const filename = photoUri.split('/').pop() ?? 'photo.jpg';
         const ext = filename.split('.').pop()?.toLowerCase() ?? 'jpg';
@@ -157,7 +169,7 @@ export default function AddPetScreen({ navigation }: Props) {
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity style={styles.headerBtn} onPress={() => navigation.goBack()}>
-          <MaterialIcons name="arrow-back" size={24} color={Colors.onSurface} />
+          <MaterialIcons name="arrow-back" size={24} color={colors.onSurface} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>新增寵物</Text>
         <View style={styles.headerBtn} />
@@ -175,7 +187,7 @@ export default function AddPetScreen({ navigation }: Props) {
               <Image source={{ uri: photoUri }} style={styles.photoPreview} />
             ) : (
               <>
-                <MaterialCommunityIcons name="camera-plus-outline" size={30} color={Colors.outline} />
+                <MaterialCommunityIcons name="camera-plus-outline" size={30} color={colors.outline} />
                 <Text style={styles.photoLabel}>新增照片</Text>
               </>
             )}
@@ -189,7 +201,7 @@ export default function AddPetScreen({ navigation }: Props) {
             <TextInput
               style={styles.inputField}
               placeholder="例如：小白"
-              placeholderTextColor={Colors.outline}
+              placeholderTextColor={colors.outline}
               value={name}
               onChangeText={setName}
             />
@@ -212,7 +224,7 @@ export default function AddPetScreen({ navigation }: Props) {
                   <MaterialCommunityIcons
                     name={g === 'male' ? 'gender-male' : 'gender-female'}
                     size={18}
-                    color={active ? Colors.onPrimary : Colors.onSurfaceVariant}
+                    color={active ? colors.onPrimary : colors.onSurfaceVariant}
                   />
                   <Text style={[styles.genderLabel, active && styles.genderLabelActive]}>
                     {g === 'male' ? '男生' : '女生'}
@@ -243,7 +255,7 @@ export default function AddPetScreen({ navigation }: Props) {
                   <MaterialCommunityIcons
                     name={s.icon}
                     size={28}
-                    color={active ? Colors.primary : Colors.onSurfaceVariant}
+                    color={active ? colors.primary : colors.onSurfaceVariant}
                   />
                   <Text style={[styles.speciesLabel, active && styles.speciesLabelActive]}>
                     {s.label}
@@ -284,7 +296,7 @@ export default function AddPetScreen({ navigation }: Props) {
             <TextInput
               style={styles.inputField}
               placeholder={breeds.length > 0 ? '或直接輸入品種...' : '輸入品種...'}
-              placeholderTextColor={Colors.outline}
+              placeholderTextColor={colors.outline}
               value={breed}
               onChangeText={setBreed}
             />
@@ -298,7 +310,7 @@ export default function AddPetScreen({ navigation }: Props) {
             <TextInput
               style={styles.inputField}
               placeholder="0.0"
-              placeholderTextColor={Colors.outline}
+              placeholderTextColor={colors.outline}
               keyboardType="decimal-pad"
               value={weightKg}
               onChangeText={setWeightKg}
@@ -317,7 +329,7 @@ export default function AddPetScreen({ navigation }: Props) {
               <TextInput
                 style={[styles.inputField, styles.dateField]}
                 placeholder="YYYY"
-                placeholderTextColor={Colors.outline}
+                placeholderTextColor={colors.outline}
                 keyboardType="number-pad"
                 maxLength={4}
                 value={birthYear}
@@ -329,7 +341,7 @@ export default function AddPetScreen({ navigation }: Props) {
               <TextInput
                 style={[styles.inputField, styles.dateField]}
                 placeholder="MM"
-                placeholderTextColor={Colors.outline}
+                placeholderTextColor={colors.outline}
                 keyboardType="number-pad"
                 maxLength={2}
                 value={birthMonth}
@@ -341,7 +353,7 @@ export default function AddPetScreen({ navigation }: Props) {
               <TextInput
                 style={[styles.inputField, styles.dateField]}
                 placeholder="DD"
-                placeholderTextColor={Colors.outline}
+                placeholderTextColor={colors.outline}
                 keyboardType="number-pad"
                 maxLength={2}
                 value={birthDay}
@@ -359,7 +371,7 @@ export default function AddPetScreen({ navigation }: Props) {
               <TextInput
                 style={[styles.inputField, styles.dateField]}
                 placeholder="YYYY"
-                placeholderTextColor={Colors.outline}
+                placeholderTextColor={colors.outline}
                 keyboardType="number-pad"
                 maxLength={4}
                 value={joinYear}
@@ -371,7 +383,7 @@ export default function AddPetScreen({ navigation }: Props) {
               <TextInput
                 style={[styles.inputField, styles.dateField]}
                 placeholder="MM"
-                placeholderTextColor={Colors.outline}
+                placeholderTextColor={colors.outline}
                 keyboardType="number-pad"
                 maxLength={2}
                 value={joinMonth}
@@ -383,7 +395,7 @@ export default function AddPetScreen({ navigation }: Props) {
               <TextInput
                 style={[styles.inputField, styles.dateField]}
                 placeholder="DD"
-                placeholderTextColor={Colors.outline}
+                placeholderTextColor={colors.outline}
                 keyboardType="number-pad"
                 maxLength={2}
                 value={joinDay}
@@ -400,7 +412,7 @@ export default function AddPetScreen({ navigation }: Props) {
             <TextInput
               style={[styles.inputField, styles.notesField]}
               placeholder="關於您寵物的特別備注..."
-              placeholderTextColor={Colors.outline}
+              placeholderTextColor={colors.outline}
               multiline
               value={notes}
               onChangeText={setNotes}
@@ -418,7 +430,7 @@ export default function AddPetScreen({ navigation }: Props) {
           disabled={!name.trim() || loading}
           activeOpacity={0.85}
         >
-          <MaterialCommunityIcons name="paw" size={18} color={Colors.onPrimary} />
+          <MaterialCommunityIcons name="paw" size={18} color={colors.onPrimary} />
           <Text style={styles.submitBtnLabel}>{loading ? '新增中...' : '新增寵物'}</Text>
         </TouchableOpacity>
       </View>
@@ -426,8 +438,8 @@ export default function AddPetScreen({ navigation }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background },
+const makeStyles = (c: ThemeColors) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: c.background },
 
   header: {
     flexDirection: 'row',
@@ -441,7 +453,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     fontFamily: FontFamily.headlineSemiBold,
     fontSize: FontSize.bodyLG,
-    color: Colors.onSurface,
+    color: c.onSurface,
   },
 
   content: { paddingHorizontal: 20, paddingBottom: 120, gap: 24 },
@@ -452,10 +464,10 @@ const styles = StyleSheet.create({
     width: 110,
     height: 110,
     borderRadius: 55,
-    backgroundColor: Colors.surfaceContainerHigh,
+    backgroundColor: c.surfaceContainerHigh,
     borderWidth: 2,
     borderStyle: 'dashed',
-    borderColor: Colors.outlineVariant,
+    borderColor: c.outlineVariant,
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
@@ -463,7 +475,7 @@ const styles = StyleSheet.create({
   photoLabel: {
     fontFamily: FontFamily.headlineMedium,
     fontSize: FontSize.labelSM,
-    color: Colors.outline,
+    color: c.outline,
   },
   photoPreview: {
     width: 110,
@@ -476,14 +488,14 @@ const styles = StyleSheet.create({
   sectionLabel: {
     fontFamily: FontFamily.headlineSemiBold,
     fontSize: FontSize.labelMD,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
   },
 
   // Generic input
   inputWrap: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.surfaceContainerHigh,
+    backgroundColor: c.surfaceContainerHigh,
     borderRadius: 14,
     paddingHorizontal: 16,
     paddingVertical: 14,
@@ -493,16 +505,16 @@ const styles = StyleSheet.create({
     flex: 1,
     fontFamily: FontFamily.bodySemiBold,
     fontSize: FontSize.bodyMD,
-    color: Colors.onSurface,
+    color: c.onSurface,
     padding: 0,
   },
   inputSuffix: {
     fontFamily: FontFamily.bodyMedium,
     fontSize: FontSize.bodyMD,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
   },
   inputSuffixToggle: {
-    color: Colors.primary,
+    color: c.primary,
     fontFamily: FontFamily.headlineSemiBold,
     textDecorationLine: 'underline',
   },
@@ -517,15 +529,15 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingVertical: 14,
     borderRadius: 14,
-    backgroundColor: Colors.surfaceContainerHigh,
+    backgroundColor: c.surfaceContainerHigh,
   },
-  genderChipActive: { backgroundColor: Colors.primary },
+  genderChipActive: { backgroundColor: c.primary },
   genderLabel: {
     fontFamily: FontFamily.headlineMedium,
     fontSize: FontSize.bodyMD,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
   },
-  genderLabelActive: { color: Colors.onPrimary },
+  genderLabelActive: { color: c.onPrimary },
 
   // Species
   speciesScroll: { gap: 8, paddingBottom: 2 },
@@ -536,21 +548,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    backgroundColor: Colors.surfaceContainerHigh,
+    backgroundColor: c.surfaceContainerHigh,
     borderWidth: 2,
     borderColor: 'transparent',
   },
   speciesChipActive: {
-    backgroundColor: Colors.primaryFixed,
-    borderColor: Colors.primary,
+    backgroundColor: c.primaryFixed,
+    borderColor: c.primary,
   },
   speciesLabel: {
     fontFamily: FontFamily.headlineMedium,
     fontSize: FontSize.labelMD,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
   },
   speciesLabelActive: {
-    color: Colors.primary,
+    color: c.primary,
     fontFamily: FontFamily.headlineSemiBold,
   },
 
@@ -560,21 +572,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 9999,
-    backgroundColor: Colors.surfaceContainerHigh,
+    backgroundColor: c.surfaceContainerHigh,
     borderWidth: 1.5,
     borderColor: 'transparent',
   },
   breedChipActive: {
-    backgroundColor: Colors.primaryFixed,
-    borderColor: Colors.primary,
+    backgroundColor: c.primaryFixed,
+    borderColor: c.primary,
   },
   breedChipLabel: {
     fontFamily: FontFamily.headlineMedium,
     fontSize: FontSize.labelMD,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
   },
   breedChipLabelActive: {
-    color: Colors.primary,
+    color: c.primary,
     fontFamily: FontFamily.headlineSemiBold,
   },
 
@@ -584,7 +596,7 @@ const styles = StyleSheet.create({
   dateSep: {
     fontFamily: FontFamily.bodyMedium,
     fontSize: FontSize.bodyLG,
-    color: Colors.outline,
+    color: c.outline,
   },
 
   // Notes
@@ -599,14 +611,14 @@ const styles = StyleSheet.create({
     right: 0,
     paddingHorizontal: 20,
     paddingTop: 12,
-    backgroundColor: Colors.background,
+    backgroundColor: c.background,
   },
   submitBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    backgroundColor: Colors.primary,
+    backgroundColor: c.primary,
     borderRadius: 9999,
     paddingVertical: 16,
   },
@@ -614,6 +626,6 @@ const styles = StyleSheet.create({
   submitBtnLabel: {
     fontFamily: FontFamily.headlineSemiBold,
     fontSize: FontSize.bodyMD,
-    color: Colors.onPrimary,
+    color: c.onPrimary,
   },
 });

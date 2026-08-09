@@ -4,7 +4,8 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useState } from 'react';
 import { RootStackParamList } from '../../types/navigation';
-import { Colors } from '../../constants/colors';
+import { ThemeColors } from '../../constants/themes';
+import { useTheme, useThemedStyles } from '../../context/ThemeContext';
 import { FontFamily, FontSize } from '../../constants/typography';
 import { useAuth } from '../../context/AuthContext';
 import { updateSettings } from '../../api';
@@ -29,10 +30,12 @@ function SwitchRow({
   onToggle: () => void;
   disabled?: boolean;
 }) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   return (
     <View style={[styles.row, disabled && { opacity: 0.45 }]}>
       <View style={styles.rowIcon}>
-        <MaterialIcons name={icon} size={20} color={Colors.primary} />
+        <MaterialIcons name={icon} size={20} color={colors.primary} />
       </View>
       <View style={styles.rowText}>
         <Text style={styles.rowLabel}>{label}</Text>
@@ -42,9 +45,9 @@ function SwitchRow({
         value={value}
         onValueChange={onToggle}
         disabled={disabled}
-        trackColor={{ false: Colors.surfaceVariant, true: Colors.primaryContainer }}
-        thumbColor={value ? Colors.primary : Colors.outline}
-        ios_backgroundColor={Colors.surfaceVariant}
+        trackColor={{ false: colors.surfaceVariant, true: colors.primaryContainer }}
+        thumbColor={value ? colors.primary : colors.outline}
+        ios_backgroundColor={colors.surfaceVariant}
       />
     </View>
   );
@@ -58,6 +61,8 @@ const DEFAULT_SETTINGS: NotifSettings = {
 };
 
 export default function NotificationSettingsScreen({ navigation }: Props) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const insets = useSafeAreaInsets();
   const { user, updateUser } = useAuth();
 
@@ -92,7 +97,7 @@ export default function NotificationSettingsScreen({ navigation }: Props) {
     <View style={[styles.container, { paddingBottom: insets.bottom }]}>
       <View style={[styles.appBar, { paddingTop: insets.top + 8 }]}>
         <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
-          <MaterialIcons name="arrow-back" size={24} color={Colors.onSurface} />
+          <MaterialIcons name="arrow-back" size={24} color={colors.onSurface} />
         </TouchableOpacity>
         <Text style={styles.appBarTitle}>通知設定</Text>
         <View style={{ width: 40 }} />
@@ -105,7 +110,7 @@ export default function NotificationSettingsScreen({ navigation }: Props) {
             <MaterialIcons
               name="notifications"
               size={26}
-              color={allOn ? Colors.primary : Colors.outline}
+              color={allOn ? colors.primary : colors.outline}
             />
             <View>
               <Text style={styles.masterLabel}>推播通知</Text>
@@ -115,9 +120,9 @@ export default function NotificationSettingsScreen({ navigation }: Props) {
           <Switch
             value={allOn}
             onValueChange={toggleMaster}
-            trackColor={{ false: Colors.surfaceVariant, true: Colors.primaryContainer }}
-            thumbColor={allOn ? Colors.primary : Colors.outline}
-            ios_backgroundColor={Colors.surfaceVariant}
+            trackColor={{ false: colors.surfaceVariant, true: colors.primaryContainer }}
+            thumbColor={allOn ? colors.primary : colors.outline}
+            ios_backgroundColor={colors.surfaceVariant}
           />
         </View>
 
@@ -175,21 +180,21 @@ export default function NotificationSettingsScreen({ navigation }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background },
+const makeStyles = (c: ThemeColors) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: c.background },
   appBar: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingBottom: 8,
-    backgroundColor: Colors.background,
+    backgroundColor: c.background,
   },
   backBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   appBarTitle: {
     fontFamily: FontFamily.headlineSemiBold,
     fontSize: FontSize.bodyLG,
-    color: Colors.primary,
+    color: c.primary,
   },
   content: { padding: 20, gap: 16 },
 
@@ -197,7 +202,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: Colors.primaryFixed,
+    backgroundColor: c.primaryFixed,
     borderRadius: 20,
     padding: 16,
   },
@@ -205,29 +210,29 @@ const styles = StyleSheet.create({
   masterLabel: {
     fontFamily: FontFamily.headlineSemiBold,
     fontSize: FontSize.bodyMD,
-    color: Colors.onSurface,
+    color: c.onSurface,
   },
   masterDesc: {
     fontFamily: FontFamily.bodyMedium,
     fontSize: FontSize.labelSM,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
     marginTop: 2,
   },
 
   sectionTitle: {
     fontFamily: FontFamily.headlineMedium,
     fontSize: FontSize.labelSM,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
     textTransform: 'uppercase',
     letterSpacing: 0.8,
     marginBottom: 8,
     marginLeft: 4,
   },
   card: {
-    backgroundColor: Colors.surfaceContainerLowest,
+    backgroundColor: c.surfaceContainerLowest,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: Colors.surfaceVariant,
+    borderColor: c.surfaceVariant,
     overflow: 'hidden',
   },
   row: {
@@ -241,7 +246,7 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 12,
-    backgroundColor: Colors.primaryFixed,
+    backgroundColor: c.primaryFixed,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -249,12 +254,12 @@ const styles = StyleSheet.create({
   rowLabel: {
     fontFamily: FontFamily.headlineMedium,
     fontSize: FontSize.bodyMD,
-    color: Colors.onSurface,
+    color: c.onSurface,
   },
   rowDesc: {
     fontFamily: FontFamily.bodyMedium,
     fontSize: FontSize.labelSM,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
   },
-  divider: { height: 1, backgroundColor: Colors.surfaceVariant, marginLeft: 64 },
+  divider: { height: 1, backgroundColor: c.surfaceVariant, marginLeft: 64 },
 });

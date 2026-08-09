@@ -14,6 +14,8 @@ export type RootStackParamList = {
   VetVisits: { petId: string; petName: string; pendingJobId?: string };
   NotificationSettings: undefined;
   PrivacySecurity: undefined;
+  Appearance: undefined;
+  BlockedUsers: undefined;
   HelpSupport: undefined;
   Terms: undefined;
   PrivacyPolicy: undefined;

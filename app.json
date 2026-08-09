@@ -6,15 +6,19 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.critterio.app"
+      "bundleIdentifier": "com.critterio.app",
+      "config": {
+        "usesNonExemptEncryption": false
+      }
     },
     "android": {
+      "package": "com.critterio.app",
       "adaptiveIcon": {
         "foregroundImage": "./assets/android-icon-foreground.png",
-        "backgroundColor": "#FECBA1",
+        "backgroundColor": "#FFD1A4",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false
@@ -24,7 +28,12 @@
     },
     "plugins": [
       "expo-font",
-      "expo-secure-store",
+      [
+        "expo-secure-store",
+        {
+          "faceIDPermission": false
+        }
+      ],
       [
         "expo-notifications",
         {
@@ -34,6 +43,34 @@
         }
       ],
       "expo-web-browser",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/icon.png",
+          "imageWidth": 220,
+          "resizeMode": "contain",
+          "backgroundColor": "#FFD1A4"
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Critterio 需要存取您的照片,讓您為寵物設定頭像、在每日日誌與社群貼文中附上照片,以及上傳就醫檢驗報告進行 AI 判讀。",
+          "cameraPermission": "Critterio 需要使用相機,讓您直接拍攝寵物照片、每日日誌紀錄,以及就醫檢驗報告。",
+          "microphonePermission": false
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Critterio 需要取得您的位置,才能在地圖上顯示您附近的動物醫院、寵物用品店與美容店家。",
+          "locationAlwaysAndWhenInUsePermission": false,
+          "locationAlwaysPermission": false,
+          "motionUsagePermission": false,
+          "isIosBackgroundLocationEnabled": false,
+          "isAndroidBackgroundLocationEnabled": false
+        }
+      ],
       [
         "@sentry/react-native/expo",
         {

@@ -13,7 +13,7 @@ import {
   Modal,
   Share,
   Alert,
-  Dimensions,
+  useWindowDimensions,
   ActivityIndicator,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -22,7 +22,9 @@ import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as Clipboard from 'expo-clipboard';
 import AppBar from '../../components/layout/AppBar';
-import { Colors } from '../../constants/colors';
+import Avatar from '../../components/ui/Avatar';
+import { ThemeColors } from '../../constants/themes';
+import { useTheme, useThemedStyles } from '../../context/ThemeContext';
 import { FontFamily, FontSize } from '../../constants/typography';
 import {
   getPosts,
@@ -33,6 +35,7 @@ import {
   getPostComments,
   addComment as apiAddComment,
   reportPost as apiReportPost,
+  blockUser as apiBlockUser,
   formatTimeAgo,
 } from '../../api';
 import { Post, Pet, Species } from '../../types';
@@ -48,8 +51,11 @@ type Props = {
 
 interface Comment {
   id: string;
+  /** 頭像底色的種子。後端有回傳，接起來留言者改名才不會換色 */
+  authorId?: string;
   author: string;
   avatarUrl?: string;
+  avatarColor?: number;
   content: string;
   timeAgo: string;
 }
@@ -63,15 +69,16 @@ const SPECIES_LABEL: Record<Species, string> = {
 };
 const ALL_SPECIES: Species[] = ['dog', 'cat', 'rabbit', 'small', 'bird', 'reptile', 'other'];
 
-const POST_TYPE_CONFIG: Record<PostType, { label: string; icon: keyof typeof MaterialIcons.glyphMap; color: string }> = {
-  question: { label: '問題', icon: 'help-outline', color: Colors.error },
-  meetup: { label: '揪團', icon: 'groups', color: Colors.secondary },
-  share: { label: '分享', icon: 'auto-awesome', color: Colors.primary },
-};
+const makePostTypeConfig = (
+  c: ThemeColors,
+): Record<PostType, { label: string; icon: keyof typeof MaterialIcons.glyphMap; color: string }> => ({
+  question: { label: '問題', icon: 'help-outline', color: c.error },
+  meetup: { label: '揪團', icon: 'groups', color: c.secondary },
+  share: { label: '分享', icon: 'auto-awesome', color: c.primary },
+});
 
-const SCREEN_WIDTH = Dimensions.get('window').width;
-const CARD_IMAGE_WIDTH = SCREEN_WIDTH - 42; // 20*2 margin + 1*2 border
-const COMMENT_SHEET_HEIGHT = Dimensions.get('window').height * 0.65;
+// 20*2 margin + 1*2 border；寬度在元件內用 useWindowDimensions 取得
+const CARD_IMAGE_INSET = 42;
 const MAX_IMAGES = 5;
 
 type ImagePayload = { uri: string; name: string; type: string };
@@ -79,42 +86,26 @@ type ImagePayload = { uri: string; name: string; type: string };
 function mapApiComment(c: any): Comment {
   return {
     id: String(c.id ?? c._id),
+    authorId: c.user?.id ? String(c.user.id) : undefined,
     author: c.user?.name ?? '',
     avatarUrl: c.user?.avatarUrl ?? undefined,
+    avatarColor: c.user?.avatarColor ?? undefined,
     content: c.content,
     timeAgo: formatTimeAgo(c.createdAt),
   };
 }
 
 function EmptyFeed({ onCompose }: { onCompose: () => void }) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   return (
     <View style={styles.emptyFeed}>
-      <MaterialIcons name="pets" size={64} color={Colors.outlineVariant} />
+      <MaterialIcons name="pets" size={64} color={colors.outlineVariant} />
       <Text style={styles.emptyFeedTitle}>還沒有任何貼文</Text>
       <Text style={styles.emptyFeedSub}>成為第一個分享你和毛孩的精彩時刻！</Text>
       <TouchableOpacity style={styles.emptyFeedBtn} onPress={onCompose} activeOpacity={0.8}>
         <Text style={styles.emptyFeedBtnLabel}>立刻分享</Text>
       </TouchableOpacity>
-    </View>
-  );
-}
-
-function Avatar({ url, name, size = 42 }: { url?: string; name: string; size?: number }) {
-  const initials = name
-    .split(' ')
-    .map((w) => w[0])
-    .slice(0, 2)
-    .join('')
-    .toUpperCase();
-
-  if (url) {
-    return (
-      <Image source={{ uri: url }} style={{ width: size, height: size, borderRadius: size / 2 }} />
-    );
-  }
-  return (
-    <View style={[styles.initialsAvatar, { width: size, height: size, borderRadius: size / 2 }]}>
-      <Text style={styles.initialsText}>{initials}</Text>
     </View>
   );
 }
@@ -130,6 +121,10 @@ function PostCard({
   onComment: (id: string) => void;
   onMore: (id: string) => void;
 }) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
+  const { width: screenW } = useWindowDimensions();
+  const CARD_IMAGE_WIDTH = screenW - CARD_IMAGE_INSET;
   const [liked, setLiked] = useState(post.isLiked ?? false);
   const [likeCount, setLikeCount] = useState(post.likes);
   const [imageIndex, setImageIndex] = useState(0);
@@ -151,15 +146,15 @@ function PostCard({
   return (
     <View style={styles.card}>
       <View style={styles.cardHeader}>
-        <Avatar url={post.authorAvatarUrl} name={post.author} />
+        <Avatar url={post.authorAvatarUrl} name={post.author} seed={post.authorId} colorIndex={post.authorAvatarColor} />
         <View style={{ flex: 1 }}>
           <View style={styles.authorNameRow}>
             <Text style={styles.authorName}>{post.author}</Text>
             {post.postType && post.postType !== 'share' && (
-              <View style={[styles.postTypeBadge, { backgroundColor: POST_TYPE_CONFIG[post.postType].color + '22' }]}>
-                <MaterialIcons name={POST_TYPE_CONFIG[post.postType].icon} size={11} color={POST_TYPE_CONFIG[post.postType].color} />
-                <Text style={[styles.postTypeBadgeLabel, { color: POST_TYPE_CONFIG[post.postType].color }]}>
-                  {POST_TYPE_CONFIG[post.postType].label}
+              <View style={[styles.postTypeBadge, { backgroundColor: makePostTypeConfig(colors)[post.postType].color + '22' }]}>
+                <MaterialIcons name={makePostTypeConfig(colors)[post.postType].icon} size={11} color={makePostTypeConfig(colors)[post.postType].color} />
+                <Text style={[styles.postTypeBadgeLabel, { color: makePostTypeConfig(colors)[post.postType].color }]}>
+                  {makePostTypeConfig(colors)[post.postType].label}
                 </Text>
               </View>
             )}
@@ -169,14 +164,14 @@ function PostCard({
             {post.withPets && post.withPets.length > 0 && (
               <>
                 <Text style={styles.metaDot}>·</Text>
-                <MaterialIcons name="pets" size={12} color={Colors.secondary} />
+                <MaterialIcons name="pets" size={12} color={colors.secondary} />
                 <Text style={styles.withPetsLabel}>與 {post.withPets.join('、')}</Text>
               </>
             )}
           </View>
         </View>
         <TouchableOpacity style={styles.moreBtn} onPress={() => onMore(post.id)}>
-          <MaterialIcons name="more-vert" size={20} color={Colors.outline} />
+          <MaterialIcons name="more-vert" size={20} color={colors.outline} />
         </TouchableOpacity>
       </View>
 
@@ -232,9 +227,9 @@ function PostCard({
             <MaterialIcons
               name={liked ? 'favorite' : 'favorite-border'}
               size={22}
-              color={liked ? Colors.primary : Colors.onSurfaceVariant}
+              color={liked ? colors.primary : colors.onSurfaceVariant}
             />
-            <Text style={[styles.actionCount, liked && { color: Colors.primary }]}>
+            <Text style={[styles.actionCount, liked && { color: colors.primary }]}>
               {likeCount}
             </Text>
           </TouchableOpacity>
@@ -243,12 +238,12 @@ function PostCard({
             activeOpacity={0.7}
             onPress={() => onComment(post.id)}
           >
-            <MaterialIcons name="chat-bubble-outline" size={22} color={Colors.onSurfaceVariant} />
+            <MaterialIcons name="chat-bubble-outline" size={22} color={colors.onSurfaceVariant} />
             <Text style={styles.actionCount}>{post.comments}</Text>
           </TouchableOpacity>
         </View>
         <TouchableOpacity activeOpacity={0.7} onPress={handleShare}>
-          <MaterialIcons name="share" size={22} color={Colors.onSurfaceVariant} />
+          <MaterialIcons name="share" size={22} color={colors.onSurfaceVariant} />
         </TouchableOpacity>
       </View>
     </View>
@@ -256,7 +251,12 @@ function PostCard({
 }
 
 export default function CommunityScreen({ navigation }: Props) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const insets = useSafeAreaInsets();
+  // 留言 sheet 的父層 KeyboardAvoidingView 沒有固定高度，百分比高度解析不出來，
+  // 所以這裡要算成實際數值
+  const { height: screenH } = useWindowDimensions();
   const { user } = useUser();
   const { unreadCount } = useNotifications();
   const route = useRoute<RouteProp<MainTabParamList, 'Community'>>();
@@ -570,6 +570,11 @@ export default function CommunityScreen({ navigation }: Props) {
         ...prev,
         [postId]: res.data.map(mapApiComment),
       }));
+      // 後端會濾掉封鎖對象的留言，計數以實際載入的則數為準，
+      // 否則卡片上的數字會比看得到的留言還多
+      setPosts((prev) =>
+        prev.map((p) => (p.id === postId ? { ...p, comments: res.data.length } : p)),
+      );
     }
   };
 
@@ -631,15 +636,48 @@ export default function CommunityScreen({ navigation }: Props) {
     ]);
   };
 
+  // ─── Block ────────────────────────────────────────────────────────────────
+
+  const handleBlock = (postId: string) => {
+    const target = posts.find((p) => p.id === postId);
+    if (!target?.authorId) return;
+    setMorePostId(null);
+
+    Alert.alert(
+      `封鎖 ${target.author}？`,
+      '你將不會再看到對方的貼文與留言，對方也看不到你的。可隨時到「設定 > 隱私與安全 > 已封鎖的使用者」解除。',
+      [
+        { text: '取消', style: 'cancel' },
+        {
+          text: '封鎖',
+          style: 'destructive',
+          onPress: async () => {
+            const res = await apiBlockUser(target.authorId!);
+            if (!res.success) {
+              Alert.alert('封鎖失敗', res.message || '請稍後再試');
+              return;
+            }
+            // 立即從畫面移除該用戶所有貼文，不必等重新整理
+            setPosts((prev) => prev.filter((p) => p.authorId !== target.authorId));
+            Alert.alert('已封鎖', `你不會再看到 ${target.author} 的內容`);
+          },
+        },
+      ],
+    );
+  };
+
   // ─── Render ───────────────────────────────────────────────────────────────
 
   return (
     <KeyboardAvoidingView
-      style={{ flex: 1, backgroundColor: Colors.background }}
+      style={{ flex: 1, backgroundColor: colors.background }}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <AppBar
         avatarUrl={user.avatarUrl}
+        userName={user.name}
+        userId={user.id}
+        userColor={user.avatarColor}
         onAvatarPress={() => navigation.navigate('Profile')}
         onNotificationPress={() => navigation.navigate('Notifications')}
         unreadCount={unreadCount}
@@ -657,7 +695,7 @@ export default function CommunityScreen({ navigation }: Props) {
         onEndReachedThreshold={0.3}
         ListFooterComponent={
           loadingMore ? (
-            <ActivityIndicator color={Colors.primary} style={{ marginVertical: 16 }} />
+            <ActivityIndicator color={colors.primary} style={{ marginVertical: 16 }} />
           ) : null
         }
         ListHeaderComponent={
@@ -674,8 +712,8 @@ export default function CommunityScreen({ navigation }: Props) {
                 )}
                 {!posting && (
                   <View style={styles.postTypeRow}>
-                    {(Object.keys(POST_TYPE_CONFIG) as PostType[]).map((t) => {
-                      const cfg = POST_TYPE_CONFIG[t];
+                    {(Object.keys(makePostTypeConfig(colors)) as PostType[]).map((t) => {
+                      const cfg = makePostTypeConfig(colors)[t];
                       const active = postType === t;
                       return (
                         <TouchableOpacity
@@ -684,8 +722,8 @@ export default function CommunityScreen({ navigation }: Props) {
                           onPress={() => setPostType(t)}
                           activeOpacity={0.75}
                         >
-                          <MaterialIcons name={cfg.icon} size={14} color={active ? Colors.onPrimary : cfg.color} />
-                          <Text style={[styles.postTypeChipLabel, { color: active ? Colors.onPrimary : cfg.color }]}>
+                          <MaterialIcons name={cfg.icon} size={14} color={active ? colors.onPrimary : cfg.color} />
+                          <Text style={[styles.postTypeChipLabel, { color: active ? colors.onPrimary : cfg.color }]}>
                             {cfg.label}
                           </Text>
                         </TouchableOpacity>
@@ -698,7 +736,7 @@ export default function CommunityScreen({ navigation }: Props) {
                       onPress={cancelCompose}
                       hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                     >
-                      <MaterialIcons name="close" size={26} color={Colors.onSurfaceVariant} />
+                      <MaterialIcons name="close" size={26} color={colors.onSurfaceVariant} />
                     </TouchableOpacity>
                   </View>
                 )}
@@ -736,7 +774,7 @@ export default function CommunityScreen({ navigation }: Props) {
                       <TextInput
                         style={styles.meetupInput}
                         placeholder="例如：7/20（日）下午 2 點"
-                        placeholderTextColor={Colors.outlineVariant}
+                        placeholderTextColor={colors.outlineVariant}
                         value={meetupTime}
                         onChangeText={setMeetupTime}
                       />
@@ -750,7 +788,7 @@ export default function CommunityScreen({ navigation }: Props) {
                       <TextInput
                         style={styles.meetupInput}
                         placeholder="例如：台北市大安森林公園"
-                        placeholderTextColor={Colors.outlineVariant}
+                        placeholderTextColor={colors.outlineVariant}
                         value={meetupLocation}
                         onChangeText={setMeetupLocation}
                       />
@@ -785,7 +823,7 @@ export default function CommunityScreen({ navigation }: Props) {
                       <TextInput
                         style={styles.meetupInput}
                         placeholder="例如：想找同樣養守宮的朋友（非必填）"
-                        placeholderTextColor={Colors.outlineVariant}
+                        placeholderTextColor={colors.outlineVariant}
                         value={meetupPartners}
                         onChangeText={setMeetupPartners}
                       />
@@ -796,7 +834,7 @@ export default function CommunityScreen({ navigation }: Props) {
                       <TextInput
                         style={[styles.meetupInput, styles.meetupNoteInput]}
                         placeholder="其他想補充的內容（非必填）"
-                        placeholderTextColor={Colors.outlineVariant}
+                        placeholderTextColor={colors.outlineVariant}
                         value={meetupNote}
                         onChangeText={setMeetupNote}
                         multiline
@@ -812,7 +850,7 @@ export default function CommunityScreen({ navigation }: Props) {
                           ? '想請教什麼問題？（會自動加上物種標籤，方便同溫層看到）'
                           : '你的毛孩今天在做什麼？'
                       }
-                      placeholderTextColor={Colors.outlineVariant}
+                      placeholderTextColor={colors.outlineVariant}
                       value={draft}
                       onChangeText={setDraft}
                       multiline
@@ -823,7 +861,7 @@ export default function CommunityScreen({ navigation }: Props) {
                       <View style={styles.draftHashtagsRow}>
                         {autoHashtags.map((tag) => (
                           <View key={tag} style={styles.autoHashtagChip}>
-                            <MaterialIcons name="auto-awesome" size={10} color={Colors.secondary} />
+                            <MaterialIcons name="auto-awesome" size={10} color={colors.secondary} />
                             <Text style={styles.draftHashtagText}>{tag}</Text>
                           </View>
                         ))}
@@ -832,10 +870,10 @@ export default function CommunityScreen({ navigation }: Props) {
 
                     {taggedPets.length > 0 && (
                       <View style={styles.taggedPetsRow}>
-                        <MaterialIcons name="pets" size={14} color={Colors.secondary} />
+                        <MaterialIcons name="pets" size={14} color={colors.secondary} />
                         <Text style={styles.taggedPetsText}>與 {taggedPets.join('、')} 一起</Text>
                         <TouchableOpacity onPress={() => setTaggedPets([])}>
-                          <MaterialIcons name="close" size={14} color={Colors.outlineVariant} />
+                          <MaterialIcons name="close" size={14} color={colors.outlineVariant} />
                         </TouchableOpacity>
                       </View>
                     )}
@@ -850,7 +888,7 @@ export default function CommunityScreen({ navigation }: Props) {
                             activeOpacity={0.7}
                           >
                             <Text style={styles.draftHashtagText}>{tag}</Text>
-                            <MaterialIcons name="close" size={11} color={Colors.secondary} />
+                            <MaterialIcons name="close" size={11} color={colors.secondary} />
                           </TouchableOpacity>
                         ))}
                       </View>
@@ -862,7 +900,7 @@ export default function CommunityScreen({ navigation }: Props) {
                         <TextInput
                           style={styles.hashtagTextInput}
                           placeholder="輸入標籤後按確認"
-                          placeholderTextColor={Colors.outlineVariant}
+                          placeholderTextColor={colors.outlineVariant}
                           value={hashtagInput}
                           onChangeText={setHashtagInput}
                           onSubmitEditing={addHashtag}
@@ -873,7 +911,7 @@ export default function CommunityScreen({ navigation }: Props) {
                           <MaterialIcons
                             name="add-circle"
                             size={22}
-                            color={hashtagInput.trim() ? Colors.primary : Colors.outlineVariant}
+                            color={hashtagInput.trim() ? colors.primary : colors.outlineVariant}
                           />
                         </TouchableOpacity>
                       </View>
@@ -902,7 +940,7 @@ export default function CommunityScreen({ navigation }: Props) {
                     ))}
                     {pendingImages.length < MAX_IMAGES && (
                       <TouchableOpacity style={styles.composeAddMoreBtn} onPress={pickFromGallery}>
-                        <MaterialIcons name="add-photo-alternate" size={28} color={Colors.onSurfaceVariant} />
+                        <MaterialIcons name="add-photo-alternate" size={28} color={colors.onSurfaceVariant} />
                         <Text style={styles.composeAddMoreLabel}>{pendingImages.length}/{MAX_IMAGES}</Text>
                       </TouchableOpacity>
                     )}
@@ -911,10 +949,10 @@ export default function CommunityScreen({ navigation }: Props) {
 
                 {!posting && <View style={styles.composeFooter}>
                   <TouchableOpacity style={styles.mediaBtn} onPress={pickFromCamera}>
-                    <MaterialIcons name="photo-camera" size={22} color={Colors.primary} />
+                    <MaterialIcons name="photo-camera" size={22} color={colors.primary} />
                   </TouchableOpacity>
                   <TouchableOpacity style={styles.mediaBtn} onPress={pickFromGallery}>
-                    <MaterialIcons name="photo-library" size={22} color={Colors.primary} />
+                    <MaterialIcons name="photo-library" size={22} color={colors.primary} />
                   </TouchableOpacity>
                   {postType !== 'meetup' && (
                     <TouchableOpacity
@@ -926,8 +964,8 @@ export default function CommunityScreen({ navigation }: Props) {
                         size={22}
                         color={
                           showHashtagInput || draftHashtags.length > 0
-                            ? Colors.primary
-                            : Colors.onSurfaceVariant
+                            ? colors.primary
+                            : colors.onSurfaceVariant
                         }
                       />
                     </TouchableOpacity>
@@ -941,7 +979,7 @@ export default function CommunityScreen({ navigation }: Props) {
                         name="pets"
                         size={22}
                         color={
-                          taggedPets.length > 0 ? Colors.secondary : Colors.onSurfaceVariant
+                          taggedPets.length > 0 ? colors.secondary : colors.onSurfaceVariant
                         }
                       />
                     </TouchableOpacity>
@@ -970,14 +1008,14 @@ export default function CommunityScreen({ navigation }: Props) {
                   onPress={() => setComposing(true)}
                   activeOpacity={0.7}
                 >
-                  <Avatar url={user.avatarUrl} name={user.name} size={36} />
+                  <Avatar url={user.avatarUrl} name={user.name} seed={user.id} colorIndex={user.avatarColor} size={36} />
                   <Text style={styles.composePlaceholder}>分享你和寵物的精彩時刻...</Text>
                 </TouchableOpacity>
                 <TouchableOpacity onPress={pickFromCamera} activeOpacity={0.7}>
-                  <MaterialIcons name="photo-camera" size={22} color={Colors.primary} />
+                  <MaterialIcons name="photo-camera" size={22} color={colors.primary} />
                 </TouchableOpacity>
                 <TouchableOpacity onPress={pickFromGallery} activeOpacity={0.7}>
-                  <MaterialIcons name="photo-library" size={22} color={Colors.primary} />
+                  <MaterialIcons name="photo-library" size={22} color={colors.primary} />
                 </TouchableOpacity>
               </View>
             )}
@@ -987,7 +1025,7 @@ export default function CommunityScreen({ navigation }: Props) {
               <View style={styles.sortTabs}>
                 {(['all', 'question', 'meetup', 'share'] as FilterType[]).map((f) => {
                   const active = filterType === f;
-                  const cfg = f === 'all' ? null : POST_TYPE_CONFIG[f];
+                  const cfg = f === 'all' ? null : makePostTypeConfig(colors)[f];
                   return (
                     <TouchableOpacity
                       key={f}
@@ -996,7 +1034,7 @@ export default function CommunityScreen({ navigation }: Props) {
                       activeOpacity={0.7}
                     >
                       {cfg && (
-                        <MaterialIcons name={cfg.icon} size={14} color={active ? Colors.onPrimary : Colors.onSurfaceVariant} />
+                        <MaterialIcons name={cfg.icon} size={14} color={active ? colors.onPrimary : colors.onSurfaceVariant} />
                       )}
                       <Text style={[styles.sortTabLabel, active && styles.sortTabLabelActive]}>
                         {f === 'all' ? '全部' : cfg!.label}
@@ -1020,7 +1058,7 @@ export default function CommunityScreen({ navigation }: Props) {
                     <MaterialIcons
                       name={s === 'new' ? 'access-time' : 'local-fire-department'}
                       size={14}
-                      color={sort === s ? Colors.onPrimary : Colors.onSurfaceVariant}
+                      color={sort === s ? colors.onPrimary : colors.onSurfaceVariant}
                     />
                     <Text style={[styles.sortTabLabel, sort === s && styles.sortTabLabelActive]}>
                       {s === 'new' ? '最新' : '熱門'}
@@ -1076,7 +1114,7 @@ export default function CommunityScreen({ navigation }: Props) {
                     <MaterialIcons
                       name="pets"
                       size={14}
-                      color={selected ? Colors.onPrimary : Colors.secondary}
+                      color={selected ? colors.onPrimary : colors.secondary}
                     />
                     <Text style={[styles.petChipLabel, selected && styles.petChipLabelSelected]}>
                       {pet}
@@ -1110,18 +1148,18 @@ export default function CommunityScreen({ navigation }: Props) {
             onPress={() => setCommentPostId(null)}
           />
           <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-            <View style={styles.commentSheet}>
+            <View style={[styles.commentSheet, { height: screenH * 0.65 }]}>
               <View style={styles.sheetHandleWrap}>
                 <View style={styles.sheetHandle} />
               </View>
               <View style={styles.commentSheetHeader}>
                 <Text style={styles.commentSheetTitle}>留言</Text>
                 <TouchableOpacity onPress={() => setCommentPostId(null)}>
-                  <MaterialIcons name="close" size={22} color={Colors.onSurfaceVariant} />
+                  <MaterialIcons name="close" size={22} color={colors.onSurfaceVariant} />
                 </TouchableOpacity>
               </View>
               {commentsLoading ? (
-                <ActivityIndicator color={Colors.primary} style={{ flex: 1, marginVertical: 24 }} />
+                <ActivityIndicator color={colors.primary} style={{ flex: 1, marginVertical: 24 }} />
               ) : (
                 <FlatList
                   data={commentsForPost}
@@ -1131,7 +1169,7 @@ export default function CommunityScreen({ navigation }: Props) {
                   showsVerticalScrollIndicator={false}
                   renderItem={({ item }) => (
                     <View style={styles.commentItem}>
-                      <Avatar url={item.avatarUrl} name={item.author} size={36} />
+                      <Avatar url={item.avatarUrl} name={item.author} seed={item.authorId} colorIndex={item.avatarColor} size={36} />
                       <View style={styles.commentBubble}>
                         <Text style={styles.commentAuthor}>{item.author}</Text>
                         <Text style={styles.commentContent}>{item.content}</Text>
@@ -1145,11 +1183,11 @@ export default function CommunityScreen({ navigation }: Props) {
                 />
               )}
               <View style={[styles.commentInputBar, { paddingBottom: insets.bottom + 8 }]}>
-                <Avatar url={user.avatarUrl} name={user.name} size={32} />
+                <Avatar url={user.avatarUrl} name={user.name} seed={user.id} colorIndex={user.avatarColor} size={32} />
                 <TextInput
                   style={styles.commentTextInput}
                   placeholder="留下你的留言..."
-                  placeholderTextColor={Colors.outlineVariant}
+                  placeholderTextColor={colors.outlineVariant}
                   value={commentText}
                   onChangeText={setCommentText}
                   multiline
@@ -1159,7 +1197,7 @@ export default function CommunityScreen({ navigation }: Props) {
                   onPress={submitComment}
                   disabled={!commentText.trim()}
                 >
-                  <MaterialIcons name="send" size={18} color={Colors.onPrimary} />
+                  <MaterialIcons name="send" size={18} color={colors.onPrimary} />
                 </TouchableOpacity>
               </View>
             </View>
@@ -1195,7 +1233,7 @@ export default function CommunityScreen({ navigation }: Props) {
               }}
               activeOpacity={0.75}
             >
-              <MaterialIcons name="link" size={22} color={Colors.onSurface} />
+              <MaterialIcons name="link" size={22} color={colors.onSurface} />
               <Text style={styles.moreOptionLabel}>複製連結</Text>
             </TouchableOpacity>
             <TouchableOpacity
@@ -1203,9 +1241,26 @@ export default function CommunityScreen({ navigation }: Props) {
               onPress={() => morePostId && handleReport(morePostId)}
               activeOpacity={0.75}
             >
-              <MaterialIcons name="flag" size={22} color={Colors.error} />
-              <Text style={[styles.moreOptionLabel, { color: Colors.error }]}>回報貼文</Text>
+              <MaterialIcons name="flag" size={22} color={colors.error} />
+              <Text style={[styles.moreOptionLabel, { color: colors.error }]}>回報貼文</Text>
             </TouchableOpacity>
+            {(() => {
+              const target = posts.find((p) => p.id === morePostId);
+              // 自己的貼文不顯示封鎖
+              if (!target?.authorId || target.authorId === user.id) return null;
+              return (
+                <TouchableOpacity
+                  style={styles.moreOption}
+                  onPress={() => morePostId && handleBlock(morePostId)}
+                  activeOpacity={0.75}
+                >
+                  <MaterialIcons name="block" size={22} color={colors.error} />
+                  <Text style={[styles.moreOptionLabel, { color: colors.error }]}>
+                    封鎖 {target.author}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })()}
             <TouchableOpacity
               style={styles.moreCancelBtn}
               onPress={() => setMorePostId(null)}
@@ -1220,17 +1275,17 @@ export default function CommunityScreen({ navigation }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (c: ThemeColors) => StyleSheet.create({
   header: { paddingHorizontal: 20, paddingBottom: 8 },
 
   composeTrigger: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    backgroundColor: Colors.surfaceContainerLowest,
+    backgroundColor: c.surfaceContainerLowest,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: Colors.surfaceVariant,
+    borderColor: c.surfaceVariant,
     padding: 12,
     marginBottom: 8,
   },
@@ -1244,14 +1299,14 @@ const styles = StyleSheet.create({
     flex: 1,
     fontFamily: FontFamily.bodyMedium,
     fontSize: FontSize.bodyMD,
-    color: Colors.outlineVariant,
+    color: c.outlineVariant,
   },
 
   composeBox: {
-    backgroundColor: Colors.surfaceContainerLowest,
+    backgroundColor: c.surfaceContainerLowest,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: Colors.surfaceVariant,
+    borderColor: c.surfaceVariant,
     padding: 14,
     marginBottom: 8,
     gap: 10,
@@ -1263,25 +1318,25 @@ const styles = StyleSheet.create({
   },
   progressBarBg: {
     height: 8,
-    backgroundColor: Colors.surfaceVariant,
+    backgroundColor: c.surfaceVariant,
     borderRadius: 4,
     overflow: 'hidden',
   },
   progressBarFill: {
     height: 8,
-    backgroundColor: Colors.primary,
+    backgroundColor: c.primary,
     borderRadius: 4,
   },
   progressBarLabel: {
     fontFamily: FontFamily.bodyMedium,
     fontSize: 11,
-    color: Colors.primary,
+    color: c.primary,
     textAlign: 'right',
   },
   composeInput: {
     fontFamily: FontFamily.bodyMedium,
     fontSize: FontSize.bodyMD,
-    color: Colors.onSurface,
+    color: c.onSurface,
     minHeight: 72,
     textAlignVertical: 'top',
   },
@@ -1290,7 +1345,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: Colors.secondaryContainer + '44',
+    backgroundColor: c.secondaryContainer + '44',
     paddingHorizontal: 12,
     paddingVertical: 7,
     borderRadius: 10,
@@ -1299,7 +1354,7 @@ const styles = StyleSheet.create({
     flex: 1,
     fontFamily: FontFamily.headlineMedium,
     fontSize: FontSize.labelMD,
-    color: Colors.secondary,
+    color: c.secondary,
   },
 
   draftHashtagsRow: {
@@ -1311,7 +1366,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: Colors.secondaryContainer + '55',
+    backgroundColor: c.secondaryContainer + '55',
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: 9999,
@@ -1319,18 +1374,18 @@ const styles = StyleSheet.create({
   draftHashtagText: {
     fontFamily: FontFamily.headlineMedium,
     fontSize: FontSize.labelSM,
-    color: Colors.secondary,
+    color: c.secondary,
   },
   autoHashtagChip: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: Colors.secondaryContainer + '33',
+    backgroundColor: c.secondaryContainer + '33',
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: 9999,
     borderWidth: 1,
-    borderColor: Colors.secondary + '55',
+    borderColor: c.secondary + '55',
     borderStyle: 'dashed',
   },
 
@@ -1346,7 +1401,7 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 9999,
     borderWidth: 1.5,
-    borderColor: Colors.surfaceVariant,
+    borderColor: c.surfaceVariant,
   },
   postTypeChipLabel: {
     fontFamily: FontFamily.headlineSemiBold,
@@ -1359,23 +1414,23 @@ const styles = StyleSheet.create({
   meetupLabel: {
     fontFamily: FontFamily.headlineSemiBold,
     fontSize: FontSize.labelMD,
-    color: Colors.onSurface,
+    color: c.onSurface,
   },
   meetupRequiredMark: {
     fontFamily: FontFamily.headlineSemiBold,
     fontSize: FontSize.labelMD,
-    color: Colors.error,
+    color: c.error,
   },
   meetupInput: {
     borderWidth: 1,
-    borderColor: Colors.surfaceVariant,
+    borderColor: c.surfaceVariant,
     borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 8,
     fontFamily: FontFamily.bodyMedium,
     fontSize: FontSize.bodyMD,
-    color: Colors.onSurface,
-    backgroundColor: Colors.surfaceContainerLow,
+    color: c.onSurface,
+    backgroundColor: c.surfaceContainerLow,
   },
   meetupNoteInput: {
     minHeight: 60,
@@ -1386,7 +1441,7 @@ const styles = StyleSheet.create({
   questionSpeciesLabel: {
     fontFamily: FontFamily.bodyMedium,
     fontSize: FontSize.labelSM,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
   },
   questionSpeciesChips: {
     flexDirection: 'row',
@@ -1398,18 +1453,18 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 9999,
     borderWidth: 1.5,
-    borderColor: Colors.secondary,
+    borderColor: c.secondary,
   },
   speciesPickChipActive: {
-    backgroundColor: Colors.secondary,
+    backgroundColor: c.secondary,
   },
   speciesPickChipLabel: {
     fontFamily: FontFamily.headlineSemiBold,
     fontSize: FontSize.labelSM,
-    color: Colors.secondary,
+    color: c.secondary,
   },
   speciesPickChipLabelActive: {
-    color: Colors.onPrimary,
+    color: c.onPrimary,
   },
 
   hashtagInputRow: {
@@ -1417,22 +1472,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
     borderWidth: 1,
-    borderColor: Colors.surfaceVariant,
+    borderColor: c.surfaceVariant,
     borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 6,
-    backgroundColor: Colors.surfaceContainerLow,
+    backgroundColor: c.surfaceContainerLow,
   },
   hashtagPrefix: {
     fontFamily: FontFamily.headlineSemiBold,
     fontSize: FontSize.bodyMD,
-    color: Colors.primary,
+    color: c.primary,
   },
   hashtagTextInput: {
     flex: 1,
     fontFamily: FontFamily.bodyMedium,
     fontSize: FontSize.bodyMD,
-    color: Colors.onSurface,
+    color: c.onSurface,
     paddingVertical: 2,
   },
 
@@ -1470,7 +1525,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1.5,
     borderStyle: 'dashed',
-    borderColor: Colors.outlineVariant,
+    borderColor: c.outlineVariant,
     alignItems: 'center',
     justifyContent: 'center',
     gap: 4,
@@ -1478,7 +1533,7 @@ const styles = StyleSheet.create({
   composeAddMoreLabel: {
     fontFamily: FontFamily.bodyMedium,
     fontSize: FontSize.labelSM,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
   },
   composeFooter: {
     flexDirection: 'row',
@@ -1487,7 +1542,7 @@ const styles = StyleSheet.create({
   },
   mediaBtn: { padding: 10 },
   postBtn: {
-    backgroundColor: Colors.primary,
+    backgroundColor: c.primary,
     paddingHorizontal: 20,
     paddingVertical: 9,
     borderRadius: 9999,
@@ -1495,7 +1550,7 @@ const styles = StyleSheet.create({
   postBtnLabel: {
     fontFamily: FontFamily.headlineSemiBold,
     fontSize: FontSize.labelMD,
-    color: Colors.onPrimary,
+    color: c.onPrimary,
   },
 
   // Sort tabs
@@ -1513,30 +1568,30 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
     borderRadius: 9999,
     borderWidth: 1.5,
-    borderColor: Colors.surfaceVariant,
-    backgroundColor: Colors.surfaceContainerLow,
+    borderColor: c.surfaceVariant,
+    backgroundColor: c.surfaceContainerLow,
   },
   sortTabActive: {
-    backgroundColor: Colors.primary,
-    borderColor: Colors.primary,
+    backgroundColor: c.primary,
+    borderColor: c.primary,
   },
   sortTabLabel: {
     fontFamily: FontFamily.headlineSemiBold,
     fontSize: FontSize.labelMD,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
   },
   sortTabLabelActive: {
-    color: Colors.onPrimary,
+    color: c.onPrimary,
   },
 
   separator: { height: 10 },
 
   card: {
-    backgroundColor: Colors.surfaceContainerLowest,
+    backgroundColor: c.surfaceContainerLowest,
     borderRadius: 24,
     marginHorizontal: 20,
     borderWidth: 1,
-    borderColor: Colors.surfaceVariant,
+    borderColor: c.surfaceVariant,
   },
   carouselWrapper: {
     overflow: 'hidden',
@@ -1549,16 +1604,6 @@ const styles = StyleSheet.create({
     paddingTop: 14,
     paddingBottom: 10,
   },
-  initialsAvatar: {
-    backgroundColor: Colors.primaryContainer,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  initialsText: {
-    fontFamily: FontFamily.headlineBold,
-    fontSize: FontSize.labelMD,
-    color: Colors.onPrimaryContainer,
-  },
   authorNameRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1567,7 +1612,7 @@ const styles = StyleSheet.create({
   authorName: {
     fontFamily: FontFamily.headlineSemiBold,
     fontSize: FontSize.bodyMD,
-    color: Colors.onSurface,
+    color: c.onSurface,
   },
   postTypeBadge: {
     flexDirection: 'row',
@@ -1590,23 +1635,23 @@ const styles = StyleSheet.create({
   timeAgo: {
     fontFamily: FontFamily.headlineMedium,
     fontSize: FontSize.labelSM,
-    color: Colors.outline,
+    color: c.outline,
   },
   metaDot: {
     fontFamily: FontFamily.bodyMedium,
     fontSize: FontSize.labelSM,
-    color: Colors.outline,
+    color: c.outline,
   },
   withPetsLabel: {
     fontFamily: FontFamily.headlineMedium,
     fontSize: FontSize.labelSM,
-    color: Colors.secondary,
+    color: c.secondary,
   },
   moreBtn: { padding: 4 },
   content: {
     fontFamily: FontFamily.bodyMedium,
     fontSize: FontSize.bodyMD,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
     lineHeight: 24,
     paddingHorizontal: 16,
     paddingBottom: 10,
@@ -1619,7 +1664,7 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
   },
   hashtag: {
-    backgroundColor: Colors.secondaryContainer + '55',
+    backgroundColor: c.secondaryContainer + '55',
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 9999,
@@ -1627,7 +1672,7 @@ const styles = StyleSheet.create({
   hashtagText: {
     fontFamily: FontFamily.headlineMedium,
     fontSize: FontSize.labelSM,
-    color: Colors.secondary,
+    color: c.secondary,
   },
   postImage: { width: '100%', aspectRatio: 4 / 3 },
   imageDots: {
@@ -1640,10 +1685,10 @@ const styles = StyleSheet.create({
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: Colors.outlineVariant,
+    backgroundColor: c.outlineVariant,
   },
   imageDotActive: {
-    backgroundColor: Colors.primary,
+    backgroundColor: c.primary,
     width: 16,
     borderRadius: 3,
   },
@@ -1654,21 +1699,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderTopWidth: 1,
-    borderTopColor: Colors.surfaceVariant,
+    borderTopColor: c.surfaceVariant,
   },
   actionsLeft: { flexDirection: 'row', gap: 20 },
   actionBtn: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   actionCount: {
     fontFamily: FontFamily.headlineSemiBold,
     fontSize: FontSize.bodyMD,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
   },
 
   // Pet picker
   petPickerTitle: {
     fontFamily: FontFamily.headlineSemiBold,
     fontSize: FontSize.bodyLG,
-    color: Colors.onSurface,
+    color: c.onSurface,
     paddingHorizontal: 4,
     paddingBottom: 14,
   },
@@ -1683,25 +1728,25 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
     borderWidth: 1.5,
-    borderColor: Colors.secondary,
+    borderColor: c.secondary,
     borderRadius: 9999,
     paddingHorizontal: 14,
     paddingVertical: 8,
   },
   petChipSelected: {
-    backgroundColor: Colors.secondary,
-    borderColor: Colors.secondary,
+    backgroundColor: c.secondary,
+    borderColor: c.secondary,
   },
   petChipLabel: {
     fontFamily: FontFamily.headlineSemiBold,
     fontSize: FontSize.bodyMD,
-    color: Colors.secondary,
+    color: c.secondary,
   },
   petChipLabelSelected: {
-    color: Colors.onPrimary,
+    color: c.onPrimary,
   },
   petPickerDoneBtn: {
-    backgroundColor: Colors.primary,
+    backgroundColor: c.primary,
     borderRadius: 9999,
     paddingVertical: 14,
     alignItems: 'center',
@@ -1709,7 +1754,7 @@ const styles = StyleSheet.create({
   petPickerDoneLabel: {
     fontFamily: FontFamily.headlineSemiBold,
     fontSize: FontSize.bodyMD,
-    color: Colors.onPrimary,
+    color: c.onPrimary,
   },
 
   // Shared sheet chrome
@@ -1718,17 +1763,16 @@ const styles = StyleSheet.create({
     width: 36,
     height: 4,
     borderRadius: 2,
-    backgroundColor: Colors.outlineVariant,
+    backgroundColor: c.outlineVariant,
   },
 
   // Comment sheet
   commentSheet: {
-    backgroundColor: Colors.background,
+    backgroundColor: c.background,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    height: COMMENT_SHEET_HEIGHT,
     borderTopWidth: 1,
-    borderColor: Colors.surfaceVariant,
+    borderColor: c.surfaceVariant,
   },
   commentSheetHeader: {
     flexDirection: 'row',
@@ -1737,19 +1781,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingBottom: 12,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.surfaceVariant,
+    borderBottomColor: c.surfaceVariant,
   },
   commentSheetTitle: {
     fontFamily: FontFamily.headlineSemiBold,
     fontSize: FontSize.bodyLG,
-    color: Colors.onSurface,
+    color: c.onSurface,
   },
   commentScroll: { flex: 1 },
   commentListContent: { paddingHorizontal: 20, paddingVertical: 12, gap: 16 },
   commentItem: { flexDirection: 'row', gap: 10, alignItems: 'flex-start' },
   commentBubble: {
     flex: 1,
-    backgroundColor: Colors.surfaceContainerLow,
+    backgroundColor: c.surfaceContainerLow,
     borderRadius: 14,
     padding: 12,
     gap: 4,
@@ -1757,24 +1801,24 @@ const styles = StyleSheet.create({
   commentAuthor: {
     fontFamily: FontFamily.headlineSemiBold,
     fontSize: FontSize.labelMD,
-    color: Colors.onSurface,
+    color: c.onSurface,
   },
   commentContent: {
     fontFamily: FontFamily.bodyMedium,
     fontSize: FontSize.bodyMD,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
     lineHeight: 22,
   },
   commentTime: {
     fontFamily: FontFamily.bodyMedium,
     fontSize: FontSize.labelSM,
-    color: Colors.outline,
+    color: c.outline,
     alignSelf: 'flex-end',
   },
   emptyComments: {
     fontFamily: FontFamily.bodyMedium,
     fontSize: FontSize.bodyMD,
-    color: Colors.outlineVariant,
+    color: c.outlineVariant,
     textAlign: 'center',
     paddingVertical: 32,
   },
@@ -1785,14 +1829,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 10,
     borderTopWidth: 1,
-    borderTopColor: Colors.surfaceVariant,
-    backgroundColor: Colors.surfaceContainerLow,
+    borderTopColor: c.surfaceVariant,
+    backgroundColor: c.surfaceContainerLow,
   },
   commentTextInput: {
     flex: 1,
     fontFamily: FontFamily.bodyMedium,
     fontSize: FontSize.bodyMD,
-    color: Colors.onSurface,
+    color: c.onSurface,
     maxHeight: 80,
     paddingVertical: 8,
   },
@@ -1800,7 +1844,7 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: Colors.primary,
+    backgroundColor: c.primary,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 2,
@@ -1808,12 +1852,12 @@ const styles = StyleSheet.create({
 
   // More sheet
   moreSheet: {
-    backgroundColor: Colors.background,
+    backgroundColor: c.background,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     paddingHorizontal: 20,
     borderTopWidth: 1,
-    borderColor: Colors.surfaceVariant,
+    borderColor: c.surfaceVariant,
   },
   moreOption: {
     flexDirection: 'row',
@@ -1821,12 +1865,12 @@ const styles = StyleSheet.create({
     gap: 14,
     paddingVertical: 16,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.surfaceVariant,
+    borderBottomColor: c.surfaceVariant,
   },
   moreOptionLabel: {
     fontFamily: FontFamily.bodyMedium,
     fontSize: FontSize.bodyMD,
-    color: Colors.onSurface,
+    color: c.onSurface,
   },
   moreCancelBtn: {
     alignItems: 'center',
@@ -1835,7 +1879,7 @@ const styles = StyleSheet.create({
   moreCancelLabel: {
     fontFamily: FontFamily.headlineSemiBold,
     fontSize: FontSize.bodyMD,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
   },
 
   // Empty state
@@ -1848,19 +1892,19 @@ const styles = StyleSheet.create({
   emptyFeedTitle: {
     fontFamily: FontFamily.headlineSemiBold,
     fontSize: FontSize.bodyLG,
-    color: Colors.onSurface,
+    color: c.onSurface,
     marginTop: 8,
   },
   emptyFeedSub: {
     fontFamily: FontFamily.bodyMedium,
     fontSize: FontSize.bodyMD,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
     textAlign: 'center',
     lineHeight: 22,
   },
   emptyFeedBtn: {
     marginTop: 8,
-    backgroundColor: Colors.primary,
+    backgroundColor: c.primary,
     paddingHorizontal: 28,
     paddingVertical: 12,
     borderRadius: 9999,
@@ -1868,6 +1912,6 @@ const styles = StyleSheet.create({
   emptyFeedBtnLabel: {
     fontFamily: FontFamily.headlineSemiBold,
     fontSize: FontSize.bodyMD,
-    color: Colors.onPrimary,
+    color: c.onPrimary,
   },
 });

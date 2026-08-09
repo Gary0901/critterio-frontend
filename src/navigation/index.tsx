@@ -1,6 +1,6 @@
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
-import { LinkingOptions, NavigationContainer } from '@react-navigation/native';
+import { DarkTheme, DefaultTheme, LinkingOptions, NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -9,7 +9,8 @@ import { useAuth } from '../context/AuthContext';
 import { registerPushToken } from '../utils/registerPushToken';
 
 import { RootStackParamList, MainTabParamList } from '../types/navigation';
-import { Colors } from '../constants/colors';
+import { ThemeColors, warmColors } from '../constants/themes';
+import { useTheme, useThemedStyles, withFixedTheme } from '../context/ThemeContext';
 import { FontFamily, FontSize } from '../constants/typography';
 
 // Screens
@@ -24,6 +25,8 @@ import NotificationsScreen from '../screens/notifications/NotificationsScreen';
 import ProfileScreen from '../screens/profile/ProfileScreen';
 import NotificationSettingsScreen from '../screens/settings/NotificationSettingsScreen';
 import PrivacySecurityScreen from '../screens/settings/PrivacySecurityScreen';
+import AppearanceScreen from '../screens/settings/AppearanceScreen';
+import BlockedUsersScreen from '../screens/settings/BlockedUsersScreen';
 import HelpSupportScreen from '../screens/settings/HelpSupportScreen';
 import TermsScreen from '../screens/settings/TermsScreen';
 import PrivacyPolicyScreen from '../screens/settings/PrivacyPolicyScreen';
@@ -41,6 +44,18 @@ import PetCareGuideScreen from '../screens/main/PetCareGuideScreen';
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const Tab = createBottomTabNavigator<MainTabParamList>();
 
+// 未登入流程全程維持暖橘：這些畫面的版面是繞著品牌橘和滿版照片設計的，換色會散掉。
+// 在模組層級包一次就好 —— 寫在 render 裡會讓每次重繪都產生新的 component type，
+// 整個畫面連同 state 都會被重新掛載。
+const WarmWelcomeScreen = withFixedTheme(WelcomeScreen, 'warm');
+const WarmLoginScreen = withFixedTheme(LoginScreen, 'warm');
+const WarmRegisterScreen = withFixedTheme(RegisterScreen, 'warm');
+const WarmForgotPasswordScreen = withFixedTheme(ForgotPasswordScreen, 'warm');
+const WarmResetPasswordScreen = withFixedTheme(ResetPasswordScreen, 'warm');
+const WarmOnboardingScreen = withFixedTheme(OnboardingScreen, 'warm');
+// 轉場動畫底下露出的也要是暖橘底，否則深色模式下切過去會先閃一下深色
+const warmScreenOptions = { contentStyle: { backgroundColor: warmColors.background } };
+
 type TabIconName = keyof typeof MaterialIcons.glyphMap;
 
 const TAB_CONFIG: Record<
@@ -55,6 +70,8 @@ const TAB_CONFIG: Record<
 };
 
 function CustomTabBar({ state, navigation }: any) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const insets = useSafeAreaInsets();
 
   return (
@@ -89,7 +106,7 @@ function CustomTabBar({ state, navigation }: any) {
                 <MaterialIcons
                   name={isFocused ? cfg.iconActive : cfg.icon}
                   size={24}
-                  color={isFocused ? Colors.onPrimary : Colors.primary}
+                  color={isFocused ? colors.onPrimary : colors.primary}
                 />
               </View>
               <Text style={[styles.tabLabel, isFocused && styles.tabLabelActive]}>
@@ -109,7 +126,7 @@ function CustomTabBar({ state, navigation }: any) {
             <MaterialIcons
               name={isFocused ? cfg.iconActive : cfg.icon}
               size={24}
-              color={isFocused ? Colors.primary : Colors.outline}
+              color={isFocused ? colors.primary : colors.outline}
             />
             <Text style={[styles.tabLabel, isFocused && styles.tabLabelActive]}>
               {cfg.label}
@@ -152,7 +169,26 @@ const linking = {
 };
 
 export default function AppNavigation() {
+  const { colors, isDark } = useTheme();
   const { user, isLoading } = useAuth();
+
+  // React Navigation 有自己的一組色，不接的話轉場與 modal 底層會露出它的預設白
+  const navTheme = useMemo(
+    () => ({
+      ...(isDark ? DarkTheme : DefaultTheme),
+      dark: isDark,
+      colors: {
+        ...(isDark ? DarkTheme : DefaultTheme).colors,
+        primary: colors.primary,
+        background: colors.background,
+        card: colors.surfaceContainerLowest,
+        text: colors.onSurface,
+        border: colors.outlineVariant,
+        notification: colors.error,
+      },
+    }),
+    [colors, isDark],
+  );
 
   useEffect(() => {
     if (user) registerPushToken().catch(() => {});
@@ -160,24 +196,33 @@ export default function AppNavigation() {
 
   if (isLoading) {
     return (
-      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.background }}>
-        <ActivityIndicator size="large" color={Colors.primary} />
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background }}>
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }
 
   return (
-    <NavigationContainer linking={linking as LinkingOptions<RootStackParamList>}>
+    <NavigationContainer
+      linking={linking as LinkingOptions<RootStackParamList>}
+      theme={navTheme}
+    >
       <Stack.Navigator
         initialRouteName={user ? 'MainTabs' : 'Welcome'}
-        screenOptions={{ headerShown: false, animation: 'slide_from_right' }}
+        screenOptions={{
+          headerShown: false,
+          animation: 'slide_from_right',
+          // 沒有這行的話，轉場動畫底下露出的是 navigator 的預設白底
+          contentStyle: { backgroundColor: colors.background },
+        }}
       >
-        <Stack.Screen name="Welcome" component={WelcomeScreen} />
-        <Stack.Screen name="Login" component={LoginScreen} />
-        <Stack.Screen name="Register" component={RegisterScreen} />
-        <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
-        <Stack.Screen name="ResetPassword" component={ResetPasswordScreen} />
-        <Stack.Screen name="Onboarding" component={OnboardingScreen} />
+        {/* 以下到 Onboarding 為止都是未登入流程，一律鎖定暖橘 */}
+        <Stack.Screen name="Welcome" component={WarmWelcomeScreen} options={warmScreenOptions} />
+        <Stack.Screen name="Login" component={WarmLoginScreen} options={warmScreenOptions} />
+        <Stack.Screen name="Register" component={WarmRegisterScreen} options={warmScreenOptions} />
+        <Stack.Screen name="ForgotPassword" component={WarmForgotPasswordScreen} options={warmScreenOptions} />
+        <Stack.Screen name="ResetPassword" component={WarmResetPasswordScreen} options={warmScreenOptions} />
+        <Stack.Screen name="Onboarding" component={WarmOnboardingScreen} options={warmScreenOptions} />
         <Stack.Screen name="AddPet" component={AddPetScreen} />
         <Stack.Screen name="MainTabs" component={MainTabs} />
         <Stack.Screen
@@ -211,8 +256,18 @@ export default function AppNavigation() {
           options={{ animation: 'slide_from_right' }}
         />
         <Stack.Screen
+          name="Appearance"
+          component={AppearanceScreen}
+          options={{ animation: 'slide_from_right' }}
+        />
+        <Stack.Screen
           name="PrivacySecurity"
           component={PrivacySecurityScreen}
+          options={{ animation: 'slide_from_right' }}
+        />
+        <Stack.Screen
+          name="BlockedUsers"
+          component={BlockedUsersScreen}
           options={{ animation: 'slide_from_right' }}
         />
         <Stack.Screen
@@ -240,12 +295,12 @@ export default function AppNavigation() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (c: ThemeColors) => StyleSheet.create({
   tabBar: {
     flexDirection: 'row',
-    backgroundColor: Colors.surfaceContainerLowest,
+    backgroundColor: c.surfaceContainerLowest,
     borderTopWidth: 1,
-    borderTopColor: Colors.surfaceVariant,
+    borderTopColor: c.surfaceVariant,
     paddingTop: 8,
     paddingHorizontal: 8,
   },
@@ -266,20 +321,20 @@ const styles = StyleSheet.create({
     width: 52,
     height: 32,
     borderRadius: 16,
-    backgroundColor: Colors.primaryFixed,
+    backgroundColor: c.primaryFixed,
     alignItems: 'center',
     justifyContent: 'center',
   },
   centerPillActive: {
-    backgroundColor: Colors.primary,
+    backgroundColor: c.primary,
   },
   tabLabel: {
     fontFamily: FontFamily.headlineMedium,
     fontSize: FontSize.labelSM,
-    color: Colors.outline,
+    color: c.outline,
   },
   tabLabelActive: {
-    color: Colors.primary,
+    color: c.primary,
     fontFamily: FontFamily.headlineBold,
   },
 });

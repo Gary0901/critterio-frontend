@@ -16,9 +16,9 @@ import {
 import { Ole_400Regular } from '@expo-google-fonts/ole';
 
 import AppNavigation from './src/navigation';
-import { Colors } from './src/constants/colors';
 import { AuthProvider } from './src/context/AuthContext';
 import { NotificationProvider } from './src/context/NotificationContext';
+import { ThemeProvider, useTheme } from './src/context/ThemeContext';
 import * as Sentry from '@sentry/react-native';
 
 Sentry.init({
@@ -35,6 +35,32 @@ Sentry.init({
   // spotlight: __DEV__,
 });
 
+/**
+ * 字型與主題偏好都是非同步載入的，兩邊都好了才渲染 App，
+ * 否則第一幀會閃一下錯誤的配色。
+ */
+function AppContent({ fontsLoaded }: { fontsLoaded: boolean }) {
+  const { colors, isDark, ready } = useTheme();
+
+  if (!fontsLoaded || !ready) {
+    return (
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background }}>
+        <ActivityIndicator size="large" color={colors.primary} />
+      </View>
+    );
+  }
+
+  return (
+    <AuthProvider>
+      <NotificationProvider>
+        {/* style="auto" 只認系統的深淺，認不出我們的自訂主題，所以顯式指定 */}
+        <StatusBar style={isDark ? 'light' : 'dark'} />
+        <AppNavigation />
+      </NotificationProvider>
+    </AuthProvider>
+  );
+}
+
 export default Sentry.wrap(function App() {
   const [fontsLoaded] = useFonts({
     PlusJakartaSans_500Medium,
@@ -47,22 +73,11 @@ export default Sentry.wrap(function App() {
     Ole_400Regular,
   });
 
-  if (!fontsLoaded) {
-    return (
-      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.background }}>
-        <ActivityIndicator size="large" color={Colors.primary} />
-      </View>
-    );
-  }
-
   return (
     <SafeAreaProvider>
-      <AuthProvider>
-        <NotificationProvider>
-          <StatusBar style="dark" />
-          <AppNavigation />
-        </NotificationProvider>
-      </AuthProvider>
+      <ThemeProvider>
+        <AppContent fontsLoaded={fontsLoaded} />
+      </ThemeProvider>
     </SafeAreaProvider>
   );
 });

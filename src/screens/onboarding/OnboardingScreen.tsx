@@ -5,11 +5,14 @@ import {
   StyleSheet,
   FlatList,
   Dimensions,
+  ScrollView,
+  useWindowDimensions,
   TouchableOpacity,
   Animated,
   Easing,
   Image,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -37,7 +40,8 @@ function bezierLength(
   }
   return len;
 }
-import { Colors } from '../../constants/colors';
+import { ThemeColors } from '../../constants/themes';
+import { useTheme, useThemedStyles } from '../../context/ThemeContext';
 import { FontFamily, FontSize, LineHeight } from '../../constants/typography';
 
 type Props = {
@@ -54,13 +58,16 @@ const PHOTO_H = 160;
 const CARD_GAP = 16;
 const STEP = CARD_W + CARD_GAP;
 
-// ── Slide 2 — Ask AI Anything: layout constants ───────────────────────────────
+// ── Slide 5 — 健檢報告：版面常數 ─────────────────────────────────────────────
+const REPORT_THUMB_H = 96;
+
+// ── Slide 2 — 智慧新夥伴：版面常數 ────────────────────────────────────────────
 const AI_IMAGE_SIZE   = 240;
 const AI_IMAGE_TOP    = 20;
 const AI_IMAGE_LEFT   = (CARD_W - AI_IMAGE_SIZE) / 2;
 const AI_CONTAINER_H  = AI_IMAGE_SIZE + AI_IMAGE_TOP * 2;
 
-// ── Slide 1 — Create Your Pet's Space ────────────────────────────────────────
+// ── Slide 1 — 建立寵物專屬空間 ───────────────────────────────────────────────
 // Components : PetCard, PetCardCarousel
 // Styles     : cardStyles (bottom of file)
 type PetData = {
@@ -105,6 +112,8 @@ const PETS_DATA: PetData[] = [
 ];
 
 function PetCard({ pet }: { pet: PetData }) {
+  const { colors } = useTheme();
+  const cardStyles = useThemedStyles(makeCardStyles);
   return (
     <View style={cardStyles.card}>
       <View style={cardStyles.photoWrap}>
@@ -117,7 +126,7 @@ function PetCard({ pet }: { pet: PetData }) {
       <View style={cardStyles.info}>
         <View style={cardStyles.nameRow}>
           <Text style={cardStyles.petName}>{pet.name}</Text>
-          <MaterialIcons name="more-vert" size={18} color={Colors.onSurfaceVariant} />
+          <MaterialIcons name="more-vert" size={18} color={colors.onSurfaceVariant} />
         </View>
         <Text style={cardStyles.petSub}>{pet.age} • {pet.breed}</Text>
         <View style={cardStyles.traits}>
@@ -135,6 +144,7 @@ function PetCard({ pet }: { pet: PetData }) {
 }
 
 function PetCardCarousel() {
+  const cardStyles = useThemedStyles(makeCardStyles);
   const translateX = useRef(new Animated.Value(0)).current;
   const idxRef = useRef(0);
   // Append duplicate of first card for seamless loop
@@ -173,7 +183,7 @@ function PetCardCarousel() {
   );
 }
 
-// ── Slide 2 — Ask AI Anything ────────────────────────────────────────────────
+// ── Slide 2 — 智慧新夥伴 ─────────────────────────────────────────────────────
 // Components : AISlide
 // Styles     : aiStyles (bottom of file)
 const FEATURES = [
@@ -182,6 +192,8 @@ const FEATURES = [
 ] as const;
 
 function AISlide({ title, titleAccent, body }: { title: string; titleAccent?: string; body: string }) {
+  const { colors } = useTheme();
+  const aiStyles = useThemedStyles(makeAiStyles);
   const pulseAnim  = useRef(new Animated.Value(0)).current;
   const floatAnim1 = useRef(new Animated.Value(0)).current;
   const floatAnim2 = useRef(new Animated.Value(0)).current;
@@ -231,8 +243,8 @@ function AISlide({ title, titleAccent, body }: { title: string; titleAccent?: st
 
         {/* Health Insight chip */}
         <Animated.View style={[aiStyles.chip, aiStyles.chipTR, { transform: [{ translateY: floatAnim1 }] }]}>
-          <View style={[aiStyles.chipIcon, { backgroundColor: Colors.secondaryContainer }]}>
-            <MaterialIcons name="health-and-safety" size={18} color={Colors.secondary} />
+          <View style={[aiStyles.chipIcon, { backgroundColor: colors.secondaryContainer }]}>
+            <MaterialIcons name="health-and-safety" size={18} color={colors.secondary} />
           </View>
           <View>
             <Text style={aiStyles.chipLabel}>健康分析</Text>
@@ -242,8 +254,8 @@ function AISlide({ title, titleAccent, body }: { title: string; titleAccent?: st
 
         {/* Behavior Tip chip */}
         <Animated.View style={[aiStyles.chip, aiStyles.chipBL, { transform: [{ translateY: floatAnim2 }] }]}>
-          <View style={[aiStyles.chipIcon, { backgroundColor: Colors.primaryFixed }]}>
-            <MaterialIcons name="psychology" size={18} color={Colors.primary} />
+          <View style={[aiStyles.chipIcon, { backgroundColor: colors.primaryFixed }]}>
+            <MaterialIcons name="psychology" size={18} color={colors.primary} />
           </View>
           <View>
             <Text style={aiStyles.chipLabel}>行為建議</Text>
@@ -254,7 +266,7 @@ function AISlide({ title, titleAccent, body }: { title: string; titleAccent?: st
 
       {/* ── New Feature badge ── */}
       <View style={aiStyles.badge}>
-        <MaterialIcons name="auto-awesome" size={13} color={Colors.secondary} />
+        <MaterialIcons name="auto-awesome" size={13} color={colors.secondary} />
         <Text style={aiStyles.badgeText}>全新功能</Text>
       </View>
 
@@ -270,7 +282,7 @@ function AISlide({ title, titleAccent, body }: { title: string; titleAccent?: st
       {/* ── Feature row (cycling) ── */}
       <Animated.View style={[aiStyles.featureRow, { opacity: fadeAnim }]}>
         <View style={aiStyles.featureIconBox}>
-          <MaterialIcons name={FEATURES[featureIdx].icon} size={20} color={Colors.primary} />
+          <MaterialIcons name={FEATURES[featureIdx].icon} size={20} color={colors.primary} />
         </View>
         <View style={aiStyles.featureTextBox}>
           <Text style={aiStyles.featureTitle}>{FEATURES[featureIdx].title}</Text>
@@ -281,7 +293,7 @@ function AISlide({ title, titleAccent, body }: { title: string; titleAccent?: st
   );
 }
 
-// ── Slide 3 — Track Their Vitals ─────────────────────────────────────────────
+// ── Slide 4 — 健康數據追蹤 ───────────────────────────────────────────────────
 // Components : WeightChart, ReminderItem, VitalsSlide
 // Styles     : vitStyles (bottom of file)
 const WEIGHT_DATA = [
@@ -298,6 +310,7 @@ const CHART_H_PAD   = 12;
 const CHART_MAX     = 35;
 
 function WeightChart({ isVisible }: { isVisible: boolean }) {
+  const { colors } = useTheme();
   const dotAnims = useRef(Array.from({ length: 5 }, () => new Animated.Value(0))).current;
   const segAnims = useRef(Array.from({ length: 4 }, () => new Animated.Value(0))).current;
   const cancelledRef = useRef(false);
@@ -357,7 +370,7 @@ function WeightChart({ isVisible }: { isVisible: boolean }) {
         <AnimatedPath
           key={i}
           d={seg.d}
-          stroke={Colors.primary}
+          stroke={colors.primary}
           strokeWidth={2.5}
           fill="none"
           strokeLinecap="round"
@@ -367,10 +380,10 @@ function WeightChart({ isVisible }: { isVisible: boolean }) {
       ))}
       {pts.map((p, i) => (
         <React.Fragment key={i}>
-          <AnimatedSvgText x={p.x} y={p.y - 6} fontSize={9} fill={Colors.onSurface} textAnchor="middle" opacity={dotAnims[i]}>
+          <AnimatedSvgText x={p.x} y={p.y - 6} fontSize={9} fill={colors.onSurface} textAnchor="middle" opacity={dotAnims[i]}>
             {String(WEIGHT_DATA[i].value)}
           </AnimatedSvgText>
-          <AnimatedCircle cx={p.x} cy={p.y} r={3.5} fill={Colors.primaryFixed} stroke={Colors.primary} strokeWidth={1.5} opacity={dotAnims[i]} />
+          <AnimatedCircle cx={p.x} cy={p.y} r={3.5} fill={colors.primaryFixed} stroke={colors.primary} strokeWidth={1.5} opacity={dotAnims[i]} />
         </React.Fragment>
       ))}
     </Svg>
@@ -388,6 +401,7 @@ interface ReminderProps {
 }
 
 function ReminderItem({ iconName, iconBg, iconColor, title, time, desc, right }: ReminderProps) {
+  const vitStyles = useThemedStyles(makeVitStyles);
   return (
     <View style={vitStyles.reminderItem}>
       <View style={[vitStyles.reminderIcon, { backgroundColor: iconBg }]}>
@@ -406,6 +420,8 @@ function ReminderItem({ iconName, iconBg, iconColor, title, time, desc, right }:
 }
 
 function VitalsSlide({ isVisible }: { isVisible: boolean }) {
+  const { colors } = useTheme();
+  const vitStyles = useThemedStyles(makeVitStyles);
   const itemAnims = useRef(
     Array.from({ length: 3 }, () => ({
       opacity: new Animated.Value(0),
@@ -465,7 +481,7 @@ function VitalsSlide({ isVisible }: { isVisible: boolean }) {
             </Text>
           </View>
           <View style={vitStyles.chartIconBtn}>
-            <MaterialIcons name="bar-chart" size={22} color={Colors.onSurface} />
+            <MaterialIcons name="bar-chart" size={22} color={colors.onSurface} />
           </View>
         </View>
         <WeightChart isVisible={isVisible} />
@@ -496,8 +512,8 @@ function VitalsSlide({ isVisible }: { isVisible: boolean }) {
         <Animated.View style={{ opacity: itemAnims[1].opacity, transform: [{ translateY: itemAnims[1].translateY }] }}>
           <ReminderItem
             iconName="medical-services"
-            iconBg={Colors.primaryFixed}
-            iconColor={Colors.onPrimaryContainer}
+            iconBg={colors.primaryFixed}
+            iconColor={colors.onPrimaryContainer}
             title="獸醫回診"
             time="10:30"
             desc="Cooper 年度疫苗施打"
@@ -507,8 +523,8 @@ function VitalsSlide({ isVisible }: { isVisible: boolean }) {
         <Animated.View style={{ opacity: itemAnims[2].opacity, transform: [{ translateY: itemAnims[2].translateY }] }}>
           <ReminderItem
             iconName="medication"
-            iconBg={Colors.secondaryContainer}
-            iconColor={Colors.secondary}
+            iconBg={colors.secondaryContainer}
+            iconColor={colors.secondary}
             title="心絲蟲預防藥"
             time="08:00"
             desc="Bella 每月服藥"
@@ -524,7 +540,7 @@ function VitalsSlide({ isVisible }: { isVisible: boolean }) {
   );
 }
 
-// ── Slide 3b — Explore the Map ───────────────────────────────────────────────
+// ── Slide 3 — 寵物景點地圖 ───────────────────────────────────────────────────
 
 const MAP_SPOTS = [
   {
@@ -549,12 +565,14 @@ const MAP_SPOTS = [
   },
 ];
 
-const MAP_CATEGORY_CONFIG: Record<string, { icon: keyof typeof MaterialIcons.glyphMap; bgColor: string; iconColor: string; label: string }> = {
-  vet:        { icon: 'local-hospital', bgColor: '#FDECEA', iconColor: '#C62828', label: '動物醫院' },
-  park:       { icon: 'local-florist',  bgColor: '#E8F5E9', iconColor: '#2E7D32', label: '寵物公園' },
-  grooming:   { icon: 'content-cut',    bgColor: '#EDE7F6', iconColor: '#6750A4', label: '寵物美容' },
-  restaurant: { icon: 'restaurant',     bgColor: '#FFF3E0', iconColor: '#E65100', label: '友善餐廳' },
-};
+const makeMapCategoryConfig = (
+  c: ThemeColors,
+): Record<string, { icon: keyof typeof MaterialIcons.glyphMap; bgColor: string; iconColor: string; label: string }> => ({
+  vet:        { icon: 'local-hospital', bgColor: c.catHospitalBg, iconColor: c.catHospital, label: '動物醫院' },
+  park:       { icon: 'local-florist',  bgColor: c.catParkBg, iconColor: c.catPark, label: '寵物公園' },
+  grooming:   { icon: 'content-cut',    bgColor: c.catGroomingBg, iconColor: c.catGrooming, label: '寵物美容' },
+  restaurant: { icon: 'restaurant',     bgColor: c.catRestaurantBg, iconColor: c.catRestaurant, label: '友善餐廳' },
+});
 
 const DEMO_PLACES = [
   { name: '信義廣場狗活動區', category: 'park',       rating: 4.1, distance: '79 m',   address: '台北市信義區信義路五段11號' },
@@ -567,6 +585,9 @@ const DEMO_PLACES = [
 const LIST_ITEM_H = 72;
 
 function MapSlide({ isVisible, title, titleAccent }: { isVisible: boolean; title: string; titleAccent?: string; body: string }) {
+  const { colors } = useTheme();
+  const mapSlStyles = useThemedStyles(makeMapSlStyles);
+  const styles = useThemedStyles(makeStyles);
   const mapRef = useRef<MapView>(null);
   const spotIdxRef = useRef(0);
   const fadeAnim = useRef(new Animated.Value(1)).current;
@@ -607,7 +628,7 @@ function MapSlide({ isVisible, title, titleAccent }: { isVisible: boolean; title
   }, [isVisible]);
 
   const spot = MAP_SPOTS[currentSpot];
-  const cfg = MAP_CATEGORY_CONFIG[spot.category];
+  const cfg = makeMapCategoryConfig(colors)[spot.category];
   const loopPlaces = [...DEMO_PLACES, ...DEMO_PLACES];
 
   return (
@@ -627,7 +648,7 @@ function MapSlide({ isVisible, title, titleAccent }: { isVisible: boolean; title
           showsBuildings={false}
         >
           {MAP_SPOTS.map((s, i) => {
-            const c = MAP_CATEGORY_CONFIG[s.category];
+            const c = makeMapCategoryConfig(colors)[s.category];
             return (
               <Marker key={i} coordinate={{ latitude: s.region.latitude, longitude: s.region.longitude }} tracksViewChanges={false}>
                 <View style={[mapSlStyles.pin, { backgroundColor: c.bgColor }]}>
@@ -657,7 +678,7 @@ function MapSlide({ isVisible, title, titleAccent }: { isVisible: boolean; title
       <View style={mapSlStyles.listClip}>
         <Animated.View style={{ transform: [{ translateY: scrollAnim }] }}>
           {loopPlaces.map((place, i) => {
-            const c = MAP_CATEGORY_CONFIG[place.category];
+            const c = makeMapCategoryConfig(colors)[place.category];
             return (
               <View key={i} style={mapSlStyles.listItem}>
                 <View style={[mapSlStyles.listIcon, { backgroundColor: c.bgColor }]}>
@@ -684,7 +705,7 @@ function MapSlide({ isVisible, title, titleAccent }: { isVisible: boolean; title
   );
 }
 
-const mapSlStyles = StyleSheet.create({
+const makeMapSlStyles = (c: ThemeColors) => StyleSheet.create({
   wrapper: { flex: 1, justifyContent: 'flex-start' },
   mapContainer: {
     height: 260,
@@ -728,12 +749,12 @@ const mapSlStyles = StyleSheet.create({
   spotLabel: {
     fontFamily: FontFamily.bodyMedium,
     fontSize: 11,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
   },
   spotName: {
     fontFamily: FontFamily.headlineSemiBold,
     fontSize: 13,
-    color: Colors.onSurface,
+    color: c.onSurface,
   },
   pin: {
     width: 32,
@@ -762,7 +783,7 @@ const mapSlStyles = StyleSheet.create({
     gap: 12,
     paddingVertical: 10,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: Colors.outlineVariant,
+    borderBottomColor: c.outlineVariant,
   },
   listIcon: {
     width: 44,
@@ -775,7 +796,7 @@ const mapSlStyles = StyleSheet.create({
   listName: {
     fontFamily: FontFamily.headlineSemiBold,
     fontSize: 14,
-    color: Colors.onSurface,
+    color: c.onSurface,
     marginBottom: 3,
   },
   listMeta: {
@@ -796,22 +817,147 @@ const mapSlStyles = StyleSheet.create({
   ratingText: {
     fontFamily: FontFamily.bodyMedium,
     fontSize: 12,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
   },
   listAddress: {
     fontFamily: FontFamily.bodyMedium,
     fontSize: 11,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
   },
   distanceText: {
     fontFamily: FontFamily.bodyMedium,
     fontSize: 12,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
     flexShrink: 0,
   },
 });
 
-// ── Slide 4 — Join the Pack ──────────────────────────────────────────────────
+// ── Slide 5 — 看得懂的健檢報告 ───────────────────────────────────────────────
+// Components : HealthReportSlide
+// Styles     : reportStyles (bottom of file)
+// 對應 VetVisitsScreen：拍照上傳檢驗單 → 解析成項目表 → 使用者確認/修正 → 存檔
+// 只放兩列：一列偏高、一列正常，剛好示範兩種狀態，小螢幕也塞得下
+const LAB_ITEMS = [
+  { name: '白血球', abbr: 'WBC',  value: '12.4', unit: 'K/µL',  status: 'HIGH'   as const, explain: '偏高，常見於發炎或感染' },
+  { name: '肌酸酐', abbr: 'CREA', value: '1.1',  unit: 'mg/dL', status: 'NORMAL' as const, explain: '腎臟代謝指標正常' },
+];
+
+// 與 VetVisitsScreen 的 STATUS_COLOR / STATUS_LABEL 對齊
+const makeLabStatus = (c: ThemeColors) => ({
+  NORMAL: { label: '正常', color: c.secondary, bg: c.secondaryContainer },
+  HIGH:   { label: '偏高', color: c.error,     bg: c.errorContainer     },
+});
+
+function HealthReportSlide({ isVisible }: { isVisible: boolean }) {
+  const { colors } = useTheme();
+  const reportStyles = useThemedStyles(makeReportStyles);
+  const rowAnims = useRef(
+    LAB_ITEMS.map(() => ({
+      opacity: new Animated.Value(0),
+      translateY: new Animated.Value(16),
+    }))
+  ).current;
+  // 掃描光條由上往下掃過報告縮圖
+  const sweep = useRef(new Animated.Value(0)).current;
+  const cancelledRef = useRef(false);
+
+  useEffect(() => {
+    if (!isVisible) return;
+    cancelledRef.current = false;
+
+    const play = () => {
+      if (cancelledRef.current) return;
+      rowAnims.forEach(a => { a.opacity.setValue(0); a.translateY.setValue(16); });
+      sweep.setValue(0);
+
+      Animated.sequence([
+        // 先掃描，掃完才逐列吐出解析結果
+        Animated.timing(sweep, { toValue: 1, duration: 900, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+        Animated.stagger(260, rowAnims.map(a =>
+          Animated.parallel([
+            Animated.timing(a.opacity, { toValue: 1, duration: 360, useNativeDriver: true }),
+            Animated.timing(a.translateY, { toValue: 0, duration: 360, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+          ])
+        )),
+        Animated.delay(2000),
+        Animated.parallel(
+          rowAnims.map(a => Animated.timing(a.opacity, { toValue: 0, duration: 280, useNativeDriver: true }))
+        ),
+      ]).start(({ finished }) => {
+        if (finished && !cancelledRef.current) setTimeout(play, 350);
+      });
+    };
+
+    play();
+    return () => { cancelledRef.current = true; };
+  }, [isVisible]);
+
+  const sweepY = sweep.interpolate({ inputRange: [0, 1], outputRange: [0, REPORT_THUMB_H] });
+
+  return (
+    <View style={reportStyles.container}>
+      {/* 報告卡：縮圖 + 掃描光條 */}
+      <View style={reportStyles.card}>
+        <View style={reportStyles.reportHeader}>
+          <View style={reportStyles.reportIcon}>
+            <MaterialIcons name="description" size={20} color={colors.primary} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={reportStyles.reportTitle}>血液生化檢驗</Text>
+            <Text style={reportStyles.reportMeta}>幸福動物醫院 · 2026/08/06</Text>
+          </View>
+        </View>
+
+        <View style={reportStyles.thumbWrap}>
+          {/* 用線條模擬報告單上的文字列 */}
+          {[0.92, 0.68, 0.84, 0.55, 0.78, 0.46].map((w, i) => (
+            <View key={i} style={[reportStyles.thumbLine, { width: `${w * 100}%` }]} />
+          ))}
+          <Animated.View style={[reportStyles.sweepBar, { transform: [{ translateY: sweepY }] }]} />
+        </View>
+      </View>
+
+      {/* 解析結果卡 */}
+      <View style={reportStyles.card}>
+        <Text style={reportStyles.resultTitle}>解析結果</Text>
+        {LAB_ITEMS.map((item, i) => {
+          const s = makeLabStatus(colors)[item.status];
+          return (
+            <Animated.View
+              key={item.abbr}
+              style={[
+                reportStyles.row,
+                { opacity: rowAnims[i].opacity, transform: [{ translateY: rowAnims[i].translateY }] },
+              ]}
+            >
+              <View style={{ flex: 1 }}>
+                <Text style={reportStyles.itemName}>
+                  {item.name}
+                  <Text style={reportStyles.itemAbbr}>{`（${item.abbr}）`}</Text>
+                </Text>
+                <Text style={reportStyles.itemExplain}>{item.explain}</Text>
+              </View>
+              <View style={reportStyles.valueBox}>
+                <Text style={reportStyles.itemValue}>{item.value}</Text>
+                <Text style={reportStyles.itemUnit}>{item.unit}</Text>
+              </View>
+              <View style={[reportStyles.statusChip, { backgroundColor: s.bg }]}>
+                <Text style={[reportStyles.statusLabel, { color: s.color }]}>{s.label}</Text>
+              </View>
+            </Animated.View>
+          );
+        })}
+
+        <View style={reportStyles.reviewHint}>
+          <MaterialIcons name="edit" size={13} color={colors.onSurfaceVariant} />
+          <Text style={reportStyles.reviewHintText}>每一項都能自己核對、修正後再存檔</Text>
+        </View>
+      </View>
+    </View>
+  );
+}
+
+// ── Slide 6 — 寵物家族社群 ───────────────────────────────────────────────────
 // Components : CommunitySlide
 // Styles     : commStyles (bottom of file)
 const JOIN_PHOTOS = [
@@ -828,6 +974,8 @@ const COMMUNITY_FEATURES = [
 ] satisfies { icon: React.ComponentProps<typeof MaterialIcons>['name']; label: string }[];
 
 function CommunitySlide({ title, titleAccent, body }: { title: string; titleAccent?: string; body: string }) {
+  const { colors } = useTheme();
+  const commStyles = useThemedStyles(makeCommStyles);
   const [photoIdx, setPhotoIdx] = useState(0);
   const fadeAnim = useRef(new Animated.Value(1)).current;
 
@@ -850,15 +998,15 @@ function CommunitySlide({ title, titleAccent, body }: { title: string; titleAcce
             <MaterialCommunityIcons name="paw" size={13} color="#fff" />
           </View>
           <Text style={commStyles.postUser}>Critterio</Text>
-          <MaterialIcons name="more-horiz" size={20} color={Colors.onSurfaceVariant} />
+          <MaterialIcons name="more-horiz" size={20} color={colors.onSurfaceVariant} />
         </View>
         <Animated.View style={[commStyles.postPhotoWrap, { opacity: fadeAnim }]}>
           <Image source={JOIN_PHOTOS[photoIdx]} style={commStyles.postPhoto} resizeMode="cover" />
         </Animated.View>
         <View style={commStyles.postFooter}>
           <MaterialIcons name="favorite" size={22} color="#e53935" />
-          <MaterialIcons name="chat-bubble-outline" size={20} color={Colors.onSurface} />
-          <MaterialIcons name="near-me" size={20} color={Colors.onSurface} />
+          <MaterialIcons name="chat-bubble-outline" size={20} color={colors.onSurface} />
+          <MaterialIcons name="near-me" size={20} color={colors.onSurface} />
         </View>
       </View>
 
@@ -874,7 +1022,7 @@ function CommunitySlide({ title, titleAccent, body }: { title: string; titleAcce
         {COMMUNITY_FEATURES.map(f => (
           <View key={f.label} style={commStyles.featureItem}>
             <View style={commStyles.featureIconWrap}>
-              <MaterialIcons name={f.icon} size={22} color={Colors.secondary} />
+              <MaterialIcons name={f.icon} size={22} color={colors.secondary} />
             </View>
             <Text style={commStyles.featureLabel}>{f.label}</Text>
           </View>
@@ -884,7 +1032,7 @@ function CommunitySlide({ title, titleAccent, body }: { title: string; titleAcce
   );
 }
 
-// ── Slide data (title / titleAccent / body / cta for all 4 slides) ───────────
+// ── Slide 文案（每張的 title / titleAccent / body / cta）─────────────────────
 const STEPS = [
   {
     key: '1',
@@ -916,17 +1064,29 @@ const STEPS = [
   },
   {
     key: '5',
+    title: '看得懂的',
+    titleAccent: '健檢報告',
+    body: '拍下獸醫給的檢驗單，自動整理成項目表，偏高偏低一眼看懂，每項都能自己核對修正。',
+    cta: '下一步 →',
+  },
+  {
+    key: '6',
     title: '加入',
     titleAccent: '寵物家族',
-    body: '與 50,000+ 位寵物家長建立連結，分享故事、尋求建議，為您的毛孩找到玩伴。',
+    body: '與 100+ 位寵物家長建立連結，分享故事、尋求建議，為您的毛孩找到玩伴。',
     cta: '立即開始 →',
   },
 ];
 
 // ── Screen component ─────────────────────────────────────────────────────────
 export default function OnboardingScreen({ navigation }: Props) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const [index, setIndex] = useState(0);
   const flatListRef = useRef<FlatList>(null);
+  // slideW 決定分頁寬度，必須跟著視窗走（iPad 分割視窗會即時改變寬度）
+  const { width: slideW } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
 
   const goTo = (i: number) => {
     flatListRef.current?.scrollToIndex({ index: i, animated: true });
@@ -951,13 +1111,13 @@ export default function OnboardingScreen({ navigation }: Props) {
 
   return (
     <LinearGradient
-      colors={[Colors.primaryFixed + 'AA', Colors.background]}
+      colors={[colors.primaryFixed + 'AA', colors.background]}
       style={styles.container}
       start={{ x: 0.5, y: 0 }}
       end={{ x: 0.5, y: 0.5 }}
     >
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
         <Text style={styles.logoText}>Critterio</Text>
         <TouchableOpacity onPress={skip}>
           <Text style={styles.skipText}>跳過</Text>
@@ -979,12 +1139,28 @@ export default function OnboardingScreen({ navigation }: Props) {
         data={STEPS}
         horizontal
         pagingEnabled
-        scrollEnabled={false}
         showsHorizontalScrollIndicator={false}
         keyExtractor={(item) => item.key}
         style={{ flex: 1, alignSelf: 'stretch' }}
+        getItemLayout={(_, i) => ({ length: slideW, offset: slideW * i, index: i })}
+        // 滑動翻頁：停下來後把 index 同步回來，各 slide 的進場動畫靠 index 觸發
+        onMomentumScrollEnd={(e) => {
+          const next = Math.round(e.nativeEvent.contentOffset.x / slideW);
+          if (next !== index) setIndex(next);
+        }}
         renderItem={({ item }) => (
-          <View style={item.key === '3' ? styles.slideMap : styles.slide}>
+          // 每張 slide 包一層垂直 ScrollView：大螢幕上 flexGrow 讓它填滿、外觀不變，
+          // 小螢幕（iPhone SE）內容放不下時改成可捲動，而不是被裁掉
+          <ScrollView
+            style={{ width: slideW }}
+            contentContainerStyle={
+              item.key === '3'
+                ? [styles.slideMapContent, { paddingHorizontal: slideW * 0.05 }]
+                : styles.slideContent
+            }
+            showsVerticalScrollIndicator={false}
+            bounces={false}
+          >
             {item.key === '1' ? (
               <>
                 <PetCardCarousel />
@@ -1007,10 +1183,19 @@ export default function OnboardingScreen({ navigation }: Props) {
                 </Text>
                 <Text style={styles.body}>{item.body}</Text>
               </>
+            ) : item.key === '5' ? (
+              <>
+                <HealthReportSlide isVisible={index === 4} />
+                <Text style={styles.title}>
+                  {item.title}
+                  {item.titleAccent && <Text style={styles.titleAccent}>{item.titleAccent}</Text>}
+                </Text>
+                <Text style={styles.body}>{item.body}</Text>
+              </>
             ) : (
               <CommunitySlide title={item.title} titleAccent={item.titleAccent} body={item.body} />
             )}
-          </View>
+          </ScrollView>
         )}
       />
 
@@ -1019,7 +1204,7 @@ export default function OnboardingScreen({ navigation }: Props) {
         {STEPS.map((_, i) => (
           <TouchableOpacity key={i} onPress={() => goTo(i)} activeOpacity={0.7}>
             {i === index ? (
-              <MaterialCommunityIcons name="paw" size={20} color={Colors.primary} />
+              <MaterialCommunityIcons name="paw" size={20} color={colors.primary} />
             ) : (
               <View style={styles.dot} />
             )}
@@ -1028,8 +1213,8 @@ export default function OnboardingScreen({ navigation }: Props) {
       </View>
 
       {/* CTA */}
-      <View style={styles.actions}>
-        <Button label={STEPS[index].cta} onPress={goNext} style={{ width: width - 40 }} />
+      <View style={[styles.actions, { paddingBottom: insets.bottom + 20 }]}>
+        <Button label={STEPS[index].cta} onPress={goNext} style={{ width: slideW - 40 }} />
         <TouchableOpacity onPress={skip}>
           <Text style={styles.skipLink}>跳過</Text>
         </TouchableOpacity>
@@ -1039,14 +1224,13 @@ export default function OnboardingScreen({ navigation }: Props) {
 }
 
 // ── Shared screen styles (header / slide wrapper / dots / CTA) ───────────────
-const styles = StyleSheet.create({
+const makeStyles = (c: ThemeColors) => StyleSheet.create({
   container: { flex: 1, alignItems: 'center' },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     alignSelf: 'stretch',
-    paddingTop: 56,
     paddingHorizontal: 20,
     paddingBottom: 0,
   },
@@ -1054,50 +1238,40 @@ const styles = StyleSheet.create({
     fontFamily: FontFamily.brand,
     fontSize: 40,
     lineHeight: 42,
-    color: Colors.primary,
+    color: c.primary,
   },
   skipText: {
     fontFamily: FontFamily.bodySemiBold,
     fontSize: FontSize.bodyMD,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
   },
-  slide: {
-    width,
+  // 這兩個是 ScrollView 的 contentContainerStyle：寬度由外層 ScrollView 給，
+  // 這裡用 flexGrow 取代 flex，內容不足時填滿、超過時可捲動
+  slideContent: {
+    flexGrow: 1,
     alignItems: 'center',
     paddingHorizontal: 32,
     paddingTop: 24,
   },
-  slideMap: {
-    width,
-    paddingHorizontal: width * 0.05,
+  slideMapContent: {
+    flexGrow: 1,
     paddingTop: 16,
-    flex: 1,
   },
-  illustrationBox: {
-    width: width * 0.72,
-    height: width * 0.72,
-    borderRadius: 24,
-    backgroundColor: Colors.surfaceContainerHigh,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 32,
-  },
-  emoji: { fontSize: 80 },
   title: {
     fontFamily: FontFamily.headlineBold,
     fontSize: FontSize.headlineLG,
-    color: Colors.onSurface,
+    color: c.onSurface,
     textAlign: 'center',
     lineHeight: LineHeight.headlineLG,
     marginBottom: 12,
   },
   titleAccent: {
-    color: Colors.primary,
+    color: c.primary,
   },
   body: {
     fontFamily: FontFamily.bodyMedium,
     fontSize: FontSize.bodyMD,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
     textAlign: 'center',
     lineHeight: 24,
   },
@@ -1106,7 +1280,7 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: Colors.outlineVariant,
+    backgroundColor: c.outlineVariant,
   },
   tapLeft: {
     position: 'absolute',
@@ -1141,16 +1315,16 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 2,
   },
-  actions: { gap: 12, alignItems: 'center', paddingBottom: 48, marginTop: 24 },
+  actions: { gap: 12, alignItems: 'center', marginTop: 24 },
   skipLink: {
     fontFamily: FontFamily.bodyMedium,
     fontSize: FontSize.bodyMD,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
   },
 });
 
-// ── Slide 1 styles ───────────────────────────────────────────────────────────
-const cardStyles = StyleSheet.create({
+// ── Slide 1 樣式（建立寵物專屬空間）──────────────────────────────────────────
+const makeCardStyles = (c: ThemeColors) => StyleSheet.create({
   carouselOuter: {
     width: CARD_W,
     overflow: 'hidden',
@@ -1187,7 +1361,7 @@ const cardStyles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: '#E8F5E9',
+    backgroundColor: c.catParkBg,
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 99,
@@ -1195,7 +1369,7 @@ const cardStyles = StyleSheet.create({
   healthText: {
     fontFamily: FontFamily.bodySemiBold,
     fontSize: FontSize.labelSM,
-    color: '#4A8F5B',
+    color: c.catPark,
   },
   info: {
     flex: 1,
@@ -1212,12 +1386,12 @@ const cardStyles = StyleSheet.create({
   petName: {
     fontFamily: FontFamily.headlineBold,
     fontSize: FontSize.bodyLG,
-    color: Colors.onSurface,
+    color: c.onSurface,
   },
   petSub: {
     fontFamily: FontFamily.bodyMedium,
     fontSize: FontSize.labelMD,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
     marginBottom: 8,
   },
   traits: {
@@ -1227,7 +1401,7 @@ const cardStyles = StyleSheet.create({
     marginBottom: 8,
   },
   chip: {
-    backgroundColor: Colors.surfaceContainerHigh,
+    backgroundColor: c.surfaceContainerHigh,
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 99,
@@ -1235,11 +1409,11 @@ const cardStyles = StyleSheet.create({
   chipText: {
     fontFamily: FontFamily.bodyMedium,
     fontSize: FontSize.labelSM,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
   },
   divider: {
     height: 1.5,
-    backgroundColor: Colors.outlineVariant,
+    backgroundColor: c.outlineVariant,
     marginBottom: 8,
     borderRadius: 1,
     opacity: 0.6,
@@ -1247,12 +1421,12 @@ const cardStyles = StyleSheet.create({
   nextApptText: {
     fontFamily: FontFamily.bodySemiBold,
     fontSize: FontSize.labelMD,
-    color: Colors.onSurface,
+    color: c.onSurface,
   },
 });
 
-// ── Slide 2 styles ───────────────────────────────────────────────────────────
-const aiStyles = StyleSheet.create({
+// ── Slide 2 樣式（智慧新夥伴）────────────────────────────────────────────────
+const makeAiStyles = (c: ThemeColors) => StyleSheet.create({
   wrapper: {
     width: CARD_W,
     alignSelf: 'center',
@@ -1271,7 +1445,7 @@ const aiStyles = StyleSheet.create({
     height: AI_IMAGE_SIZE,
     borderRadius: 18,
     overflow: 'hidden',
-    backgroundColor: Colors.surfaceContainerHigh,
+    backgroundColor: c.surfaceContainerHigh,
   },
   petImage: { width: '100%', height: '100%' },
   dashedFrame: {
@@ -1326,12 +1500,12 @@ const aiStyles = StyleSheet.create({
   chipLabel: {
     fontFamily: FontFamily.bodySemiBold,
     fontSize: FontSize.labelSM,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
   },
   chipValue: {
     fontFamily: FontFamily.headlineSemiBold,
     fontSize: FontSize.labelMD,
-    color: Colors.primary,
+    color: c.primary,
   },
   // Badge
   badge: {
@@ -1339,43 +1513,43 @@ const aiStyles = StyleSheet.create({
     alignItems: 'center',
     gap: 4,
     alignSelf: 'flex-start',
-    backgroundColor: Colors.secondaryContainer + '50',
+    backgroundColor: c.secondaryContainer + '50',
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 99,
     borderWidth: 1,
-    borderColor: Colors.secondaryContainer,
+    borderColor: c.secondaryContainer,
     marginBottom: 8,
   },
   badgeText: {
     fontFamily: FontFamily.headlineSemiBold,
     fontSize: 10,
-    color: Colors.secondary,
+    color: c.secondary,
     letterSpacing: 0.8,
   },
   // Title
   title: {
     fontFamily: FontFamily.headlineBold,
     fontSize: FontSize.headlineMD,
-    color: Colors.onSurface,
+    color: c.onSurface,
     lineHeight: LineHeight.headlineMD,
     marginBottom: 12,
   },
   titleAccent: {
-    color: Colors.primary,
+    color: c.primary,
     fontStyle: 'italic',
   },
   // Description
   description: {
     fontFamily: FontFamily.bodyMedium,
     fontSize: FontSize.labelMD,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
     lineHeight: 20,
     marginBottom: 12,
   },
   descriptionBold: {
     fontFamily: FontFamily.bodySemiBold,
-    color: Colors.onSurface,
+    color: c.onSurface,
   },
   // Feature rows
   featureRow: {
@@ -1388,7 +1562,7 @@ const aiStyles = StyleSheet.create({
     width: 38,
     height: 38,
     borderRadius: 19,
-    backgroundColor: Colors.surfaceContainerHigh,
+    backgroundColor: c.surfaceContainerHigh,
     alignItems: 'center',
     justifyContent: 'center',
     flexShrink: 0,
@@ -1397,19 +1571,19 @@ const aiStyles = StyleSheet.create({
   featureTitle: {
     fontFamily: FontFamily.headlineSemiBold,
     fontSize: FontSize.labelMD,
-    color: Colors.onSurface,
+    color: c.onSurface,
     marginBottom: 1,
   },
   featureBody: {
     fontFamily: FontFamily.bodyMedium,
     fontSize: FontSize.labelMD,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
     lineHeight: 20,
   },
 });
 
-// ── Slide 3 styles ───────────────────────────────────────────────────────────
-const vitStyles = StyleSheet.create({
+// ── Slide 4 樣式（健康數據追蹤）──────────────────────────────────────────────
+const makeVitStyles = (c: ThemeColors) => StyleSheet.create({
   container: {
     width: CARD_W,
     gap: 8,
@@ -1437,24 +1611,24 @@ const vitStyles = StyleSheet.create({
   weightLabel: {
     fontFamily: FontFamily.bodySemiBold,
     fontSize: FontSize.labelMD,
-    color: Colors.onSurface,
+    color: c.onSurface,
     marginBottom: 2,
   },
   weightValue: {
     fontFamily: FontFamily.headlineBold,
     fontSize: FontSize.headlineLG,
-    color: Colors.onPrimaryContainer,
+    color: c.onPrimaryContainer,
   },
   weightUnit: {
     fontFamily: FontFamily.bodyMedium,
     fontSize: FontSize.bodyMD,
-    color: Colors.onPrimaryContainer,
+    color: c.onPrimaryContainer,
   },
   chartIconBtn: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: Colors.surfaceContainerHigh,
+    backgroundColor: c.surfaceContainerHigh,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1467,7 +1641,7 @@ const vitStyles = StyleSheet.create({
   monthLabel: {
     fontFamily: FontFamily.bodySemiBold,
     fontSize: 10,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
   },
   // Reminders card
   remindersHeader: {
@@ -1479,19 +1653,19 @@ const vitStyles = StyleSheet.create({
   remindersTitle: {
     fontFamily: FontFamily.headlineSemiBold,
     fontSize: FontSize.bodyMD,
-    color: Colors.onSurface,
+    color: c.onSurface,
   },
   todayLabel: {
     fontFamily: FontFamily.headlineSemiBold,
     fontSize: FontSize.labelSM,
-    color: Colors.primary,
+    color: c.primary,
     letterSpacing: 0.6,
   },
   reminderItem: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    backgroundColor: Colors.surfaceContainerLow,
+    backgroundColor: c.surfaceContainerLow,
     borderRadius: 99,
     paddingHorizontal: 10,
     paddingVertical: 6,
@@ -1515,17 +1689,17 @@ const vitStyles = StyleSheet.create({
   reminderTitle: {
     fontFamily: FontFamily.headlineSemiBold,
     fontSize: FontSize.labelMD,
-    color: Colors.onSurface,
+    color: c.onSurface,
   },
   reminderTime: {
     fontFamily: FontFamily.bodyMedium,
     fontSize: FontSize.labelSM,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
   },
   reminderDesc: {
     fontFamily: FontFamily.bodyMedium,
     fontSize: FontSize.labelSM,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
     marginTop: 1,
   },
   checkbox: {
@@ -1533,22 +1707,169 @@ const vitStyles = StyleSheet.create({
     height: 24,
     borderRadius: 12,
     borderWidth: 2,
-    borderColor: Colors.outlineVariant,
+    borderColor: c.outlineVariant,
     flexShrink: 0,
   },
   pawCircle: {
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: Colors.primaryContainer,
+    backgroundColor: c.primaryContainer,
     alignItems: 'center',
     justifyContent: 'center',
     flexShrink: 0,
   },
 });
 
-// ── Slide 4 styles ───────────────────────────────────────────────────────────
-const commStyles = StyleSheet.create({
+// ── Slide 5 樣式（看得懂的健檢報告）──────────────────────────────────────────
+const makeReportStyles = (c: ThemeColors) => StyleSheet.create({
+  container: {
+    width: CARD_W,
+    gap: 8,
+    marginBottom: 8,
+  },
+  card: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    elevation: 4,
+  },
+
+  // 報告卡
+  reportHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 10,
+  },
+  reportIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: c.primaryFixed,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  reportTitle: {
+    fontFamily: FontFamily.headlineSemiBold,
+    fontSize: FontSize.labelMD,
+    color: c.onSurface,
+  },
+  reportMeta: {
+    fontFamily: FontFamily.bodyMedium,
+    fontSize: FontSize.labelSM,
+    color: c.onSurfaceVariant,
+    marginTop: 1,
+  },
+  thumbWrap: {
+    height: REPORT_THUMB_H,
+    borderRadius: 12,
+    backgroundColor: c.surfaceContainerLow,
+    borderWidth: 1,
+    borderColor: c.outlineVariant,
+    overflow: 'hidden',
+    paddingHorizontal: 12,
+    paddingVertical: 11,
+    gap: 9,
+  },
+  thumbLine: {
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: c.outlineVariant,
+  },
+  sweepBar: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: -3,
+    height: 3,
+    backgroundColor: c.primaryContainer,
+    shadowColor: c.primaryContainer,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.9,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+
+  // 解析結果卡
+  resultTitle: {
+    fontFamily: FontFamily.headlineSemiBold,
+    fontSize: FontSize.labelMD,
+    color: c.onSurface,
+    marginBottom: 8,
+  },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 6,
+    borderTopWidth: 1,
+    borderTopColor: c.surfaceContainerHigh,
+  },
+  itemName: {
+    fontFamily: FontFamily.bodySemiBold,
+    fontSize: FontSize.labelMD,
+    color: c.onSurface,
+  },
+  itemAbbr: {
+    fontFamily: FontFamily.bodyMedium,
+    fontSize: FontSize.labelSM,
+    color: c.onSurfaceVariant,
+  },
+  itemExplain: {
+    fontFamily: FontFamily.bodyMedium,
+    fontSize: 11,
+    color: c.onSurfaceVariant,
+    marginTop: 1,
+  },
+  valueBox: {
+    alignItems: 'flex-end',
+    flexShrink: 0,
+  },
+  itemValue: {
+    fontFamily: FontFamily.headlineSemiBold,
+    fontSize: FontSize.labelMD,
+    color: c.onSurface,
+  },
+  itemUnit: {
+    fontFamily: FontFamily.bodyMedium,
+    fontSize: 10,
+    color: c.onSurfaceVariant,
+  },
+  statusChip: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+    flexShrink: 0,
+  },
+  statusLabel: {
+    fontFamily: FontFamily.bodyBold,
+    fontSize: FontSize.labelSM,
+  },
+  reviewHint: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: c.surfaceContainerHigh,
+  },
+  reviewHintText: {
+    fontFamily: FontFamily.bodyMedium,
+    fontSize: FontSize.labelSM,
+    color: c.onSurfaceVariant,
+  },
+});
+
+// ── Slide 6 樣式（寵物家族社群）──────────────────────────────────────────────
+const makeCommStyles = (c: ThemeColors) => StyleSheet.create({
   wrapper: {
     width: CARD_W,
     alignSelf: 'center',
@@ -1576,7 +1897,7 @@ const commStyles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: Colors.primary,
+    backgroundColor: c.primary,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1584,7 +1905,7 @@ const commStyles = StyleSheet.create({
     flex: 1,
     fontFamily: FontFamily.brand,
     fontSize: FontSize.labelMD + 2,
-    color: Colors.onSurface,
+    color: c.onSurface,
   },
   postPhotoWrap: {
     width: '100%',
@@ -1604,15 +1925,15 @@ const commStyles = StyleSheet.create({
   title: {
     fontFamily: FontFamily.headlineBold,
     fontSize: FontSize.headlineMD,
-    color: Colors.onSurface,
+    color: c.onSurface,
     lineHeight: LineHeight.headlineMD,
     marginBottom: 6,
   },
-  titleAccent: { color: Colors.primary },
+  titleAccent: { color: c.primary },
   desc: {
     fontFamily: FontFamily.bodyMedium,
     fontSize: FontSize.labelMD,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
     lineHeight: 20,
     marginBottom: 8,
   },
@@ -1626,7 +1947,7 @@ const commStyles = StyleSheet.create({
     flexDirection: 'column',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: Colors.surfaceContainerHigh,
+    backgroundColor: c.surfaceContainerHigh,
     borderRadius: 16,
     paddingHorizontal: 8,
     paddingVertical: 10,
@@ -1635,14 +1956,14 @@ const commStyles = StyleSheet.create({
     width: 38,
     height: 38,
     borderRadius: 19,
-    backgroundColor: Colors.secondaryContainer,
+    backgroundColor: c.secondaryContainer,
     alignItems: 'center',
     justifyContent: 'center',
   },
   featureLabel: {
     fontFamily: FontFamily.headlineSemiBold,
     fontSize: FontSize.labelSM,
-    color: Colors.onSurface,
+    color: c.onSurface,
     textAlign: 'center',
   },
 });

@@ -4,7 +4,8 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useState } from 'react';
 import { RootStackParamList } from '../../types/navigation';
-import { Colors } from '../../constants/colors';
+import { ThemeColors } from '../../constants/themes';
+import { useTheme, useThemedStyles } from '../../context/ThemeContext';
 import { FontFamily, FontSize } from '../../constants/typography';
 
 type Props = {
@@ -53,6 +54,8 @@ const openEmail = async (subject?: string) => {
 };
 
 export default function HelpSupportScreen({ navigation }: Props) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const insets = useSafeAreaInsets();
   const [expanded, setExpanded] = useState<Record<number, boolean>>({});
 
@@ -63,7 +66,7 @@ export default function HelpSupportScreen({ navigation }: Props) {
     <View style={[styles.container, { paddingBottom: insets.bottom }]}>
       <View style={[styles.appBar, { paddingTop: insets.top + 8 }]}>
         <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
-          <MaterialIcons name="arrow-back" size={24} color={Colors.onSurface} />
+          <MaterialIcons name="arrow-back" size={24} color={colors.onSurface} />
         </TouchableOpacity>
         <Text style={styles.appBarTitle}>幫助與支援</Text>
         <View style={{ width: 40 }} />
@@ -85,7 +88,7 @@ export default function HelpSupportScreen({ navigation }: Props) {
                   <MaterialIcons
                     name={expanded[i] ? 'expand-less' : 'expand-more'}
                     size={22}
-                    color={Colors.onSurfaceVariant}
+                    color={colors.onSurfaceVariant}
                   />
                 </TouchableOpacity>
                 {expanded[i] && (
@@ -109,13 +112,13 @@ export default function HelpSupportScreen({ navigation }: Props) {
               activeOpacity={0.75}
             >
               <View style={styles.rowIcon}>
-                <MaterialIcons name="flag" size={20} color={Colors.primary} />
+                <MaterialIcons name="flag" size={20} color={colors.primary} />
               </View>
               <View style={styles.rowText}>
                 <Text style={styles.rowLabel}>回報問題</Text>
                 <Text style={styles.rowDesc}>{CONTACT_EMAIL}</Text>
               </View>
-              <MaterialIcons name="chevron-right" size={20} color={Colors.outlineVariant} />
+              <MaterialIcons name="chevron-right" size={20} color={colors.outlineVariant} />
             </TouchableOpacity>
             <View style={styles.divider} />
             <TouchableOpacity
@@ -124,13 +127,13 @@ export default function HelpSupportScreen({ navigation }: Props) {
               activeOpacity={0.75}
             >
               <View style={styles.rowIcon}>
-                <MaterialIcons name="business" size={20} color={Colors.primary} />
+                <MaterialIcons name="business" size={20} color={colors.primary} />
               </View>
               <View style={styles.rowText}>
                 <Text style={styles.rowLabel}>合作邀約</Text>
                 <Text style={styles.rowDesc}>{CONTACT_EMAIL}</Text>
               </View>
-              <MaterialIcons name="chevron-right" size={20} color={Colors.outlineVariant} />
+              <MaterialIcons name="chevron-right" size={20} color={colors.outlineVariant} />
             </TouchableOpacity>
           </View>
         </View>
@@ -141,7 +144,7 @@ export default function HelpSupportScreen({ navigation }: Props) {
           <View style={styles.card}>
             <View style={styles.row}>
               <View style={styles.rowIcon}>
-                <MaterialIcons name="info-outline" size={20} color={Colors.primary} />
+                <MaterialIcons name="info-outline" size={20} color={colors.primary} />
               </View>
               <Text style={styles.rowLabel}>版本</Text>
               <Text style={styles.valueText}>1.0.0</Text>
@@ -149,18 +152,18 @@ export default function HelpSupportScreen({ navigation }: Props) {
             <View style={styles.divider} />
             <TouchableOpacity style={styles.row} onPress={() => navigation.navigate('Terms')} activeOpacity={0.75}>
               <View style={styles.rowIcon}>
-                <MaterialIcons name="description" size={20} color={Colors.primary} />
+                <MaterialIcons name="description" size={20} color={colors.primary} />
               </View>
               <Text style={styles.rowLabel}>服務條款</Text>
-              <MaterialIcons name="chevron-right" size={20} color={Colors.outlineVariant} />
+              <MaterialIcons name="chevron-right" size={20} color={colors.outlineVariant} />
             </TouchableOpacity>
             <View style={styles.divider} />
             <TouchableOpacity style={styles.row} onPress={() => navigation.navigate('PrivacyPolicy')} activeOpacity={0.75}>
               <View style={styles.rowIcon}>
-                <MaterialIcons name="privacy-tip" size={20} color={Colors.primary} />
+                <MaterialIcons name="privacy-tip" size={20} color={colors.primary} />
               </View>
               <Text style={styles.rowLabel}>隱私政策</Text>
-              <MaterialIcons name="chevron-right" size={20} color={Colors.outlineVariant} />
+              <MaterialIcons name="chevron-right" size={20} color={colors.outlineVariant} />
             </TouchableOpacity>
           </View>
         </View>
@@ -169,38 +172,38 @@ export default function HelpSupportScreen({ navigation }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background },
+const makeStyles = (c: ThemeColors) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: c.background },
   appBar: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingBottom: 8,
-    backgroundColor: Colors.background,
+    backgroundColor: c.background,
   },
   backBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   appBarTitle: {
     fontFamily: FontFamily.headlineSemiBold,
     fontSize: FontSize.bodyLG,
-    color: Colors.primary,
+    color: c.primary,
   },
   content: { padding: 20, gap: 16 },
 
   sectionTitle: {
     fontFamily: FontFamily.headlineMedium,
     fontSize: FontSize.labelSM,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
     textTransform: 'uppercase',
     letterSpacing: 0.8,
     marginBottom: 8,
     marginLeft: 4,
   },
   card: {
-    backgroundColor: Colors.surfaceContainerLowest,
+    backgroundColor: c.surfaceContainerLowest,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: Colors.surfaceVariant,
+    borderColor: c.surfaceVariant,
     overflow: 'hidden',
   },
 
@@ -215,7 +218,7 @@ const styles = StyleSheet.create({
     flex: 1,
     fontFamily: FontFamily.headlineMedium,
     fontSize: FontSize.bodyMD,
-    color: Colors.onSurface,
+    color: c.onSurface,
   },
   faqAnswer: {
     paddingHorizontal: 16,
@@ -224,7 +227,7 @@ const styles = StyleSheet.create({
   faqAnswerText: {
     fontFamily: FontFamily.bodyMedium,
     fontSize: FontSize.bodyMD,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
     lineHeight: 22,
   },
 
@@ -239,7 +242,7 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 12,
-    backgroundColor: Colors.primaryFixed,
+    backgroundColor: c.primaryFixed,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -248,18 +251,18 @@ const styles = StyleSheet.create({
     flex: 1,
     fontFamily: FontFamily.headlineMedium,
     fontSize: FontSize.bodyMD,
-    color: Colors.onSurface,
+    color: c.onSurface,
   },
   rowDesc: {
     fontFamily: FontFamily.bodyMedium,
     fontSize: FontSize.labelSM,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
   },
   valueText: {
     fontFamily: FontFamily.headlineMedium,
     fontSize: FontSize.bodyMD,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
   },
-  divider: { height: 1, backgroundColor: Colors.surfaceVariant, marginLeft: 64 },
+  divider: { height: 1, backgroundColor: c.surfaceVariant, marginLeft: 64 },
 
 });

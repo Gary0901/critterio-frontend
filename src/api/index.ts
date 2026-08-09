@@ -25,6 +25,7 @@ function mapPet(p: any): Pet {
     heightCm: p.heightCm ?? 0,
     gender: p.gender,
     photoUrl: p.photoUrl ?? undefined,
+    color: p.color ?? undefined,
     traits: p.traits ?? [],
     status: 'healthy' as PetStatus,
     statusLabel: '健康',
@@ -153,9 +154,12 @@ export async function updatePetData(petId: string, updates: {
   heightCm?: number;
   weight?: number;
   photo?: { uri: string; name: string; type: string };
+  color?: number;
 }): Promise<ApiResponse<Pet>> {
   const form = new FormData();
   if (updates.name !== undefined) form.append('name', updates.name);
+  // 0 是合法索引，不能用 truthy 判斷
+  if (updates.color !== undefined) form.append('color', String(updates.color));
   if (updates.breed !== undefined) form.append('breed', updates.breed);
   if (updates.birthday !== undefined) form.append('birthday', updates.birthday);
   if (updates.joinedFamilyAt !== undefined) form.append('joinedFamilyAt', updates.joinedFamilyAt);
@@ -219,6 +223,8 @@ export interface VisitParseJobStatus {
   items: LabResultItem[];
   summaryAdvice: string;
   errorMessage: string;
+  /** 解析成功但可能漏抓項目時的提醒（資料仍可用，只是不一定完整） */
+  warningMessage: string;
 }
 
 // POST /api/v1/pets/:id/vet-visits/parse-report — 立刻回應 jobId，實際解析在後端背景進行，
@@ -229,11 +235,20 @@ export async function parseVisitReport(
 ): Promise<ApiResponse<{ jobId: string }>> {
   const form = new FormData();
   form.append('image', { uri: image.uri, name: image.name, type: image.type } as any);
-  const res = await client.post(`/pets/${petId}/vet-visits/parse-report`, form, {
-    headers: { 'Content-Type': 'multipart/form-data' },
-  });
-  if (!res.data.success) return { success: false, data: null as any, message: res.data.message };
-  return { success: true, data: { jobId: String(res.data.data.jobId) }, message: '' };
+  try {
+    const res = await client.post(`/pets/${petId}/vet-visits/parse-report`, form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    if (!res.data.success) return { success: false, data: null as any, message: res.data.message };
+    return { success: true, data: { jobId: String(res.data.data.jobId) }, message: '' };
+  } catch (e: any) {
+    // axios 對 4xx/5xx 會直接 throw，呼叫端的 catch 只會顯示「網路錯誤」，
+    // 伺服器真正的說明（例如「7 天內解析次數已達上限」）就被吞掉了。
+    // 這裡把回應主體裡的 message 取出來往上傳，讓使用者知道到底發生什麼事
+    const serverMessage = e?.response?.data?.message;
+    if (serverMessage) return { success: false, data: null as any, message: serverMessage };
+    throw e; // 真的是連線問題才讓呼叫端顯示網路錯誤
+  }
 }
 
 // GET /api/v1/pets/:id/vet-visits/parse-jobs/:jobId — 查詢背景解析工作目前的狀態，
@@ -269,6 +284,27 @@ export async function getVetVisits(petId: string): Promise<ApiResponse<VetVisit[
   const res = await client.get(`/pets/${petId}/vet-visits`);
   if (!res.data.success) return { success: false, data: [], message: res.data.message };
   return { success: true, data: res.data.data.map(mapVetVisit), message: '' };
+}
+
+// PATCH /api/v1/pets/:id/vet-visits/:visitId
+// 只送要改的欄位，沒送的後端會維持原值。
+// imageUrl／reportType 不開放修改——報告圖片與解析數值是綁定的，要換報告請刪除整筆重建。
+export async function updateVetVisit(
+  petId: string,
+  visitId: string,
+  payload: {
+    visitDate?: string;
+    clinicName?: string;
+    diagnosisNote?: string;
+    medications?: Medication[];
+    items?: LabResultItem[];
+    summaryAdvice?: string;
+    syncToCalendar?: boolean;
+  }
+): Promise<ApiResponse<VetVisit>> {
+  const res = await client.patch(`/pets/${petId}/vet-visits/${visitId}`, payload);
+  if (!res.data.success) return { success: false, data: null as any, message: res.data.message };
+  return { success: true, data: mapVetVisit(res.data.data), message: '' };
 }
 
 // DELETE /api/v1/pets/:id/vet-visits/:visitId
@@ -335,8 +371,10 @@ export async function addDiaryEntry(
 function mapPost(p: any): Post {
   return {
     id: String(p.id ?? p._id),
+    authorId: p.user?.id ? String(p.user.id) : undefined,
     author: p.user?.name ?? '',
     authorAvatarUrl: p.user?.avatarUrl ?? undefined,
+    authorAvatarColor: p.user?.avatarColor ?? undefined,
     content: p.content,
     imageUrl: p.images?.[0] ?? undefined,
     images: p.images ?? [],
@@ -446,6 +484,46 @@ export async function deletePost(postId: string): Promise<ApiResponse<null>> {
   const res = await client.delete(`/posts/${postId}`);
   if (!res.data.success) return { success: false, data: null, message: res.data.message };
   return { success: true, data: null, message: '' };
+}
+
+// ─── Blocking ─────────────────────────────────────────────────────────────────
+
+export type BlockedUser = {
+  id: string;
+  name: string;
+  avatarUrl?: string;
+  blockedAt: string;
+};
+
+// POST /api/v1/users/:id/block
+export async function blockUser(userId: string): Promise<ApiResponse<null>> {
+  const res = await client.post(`/users/${userId}/block`);
+  if (!res.data.success) return { success: false, data: null, message: res.data.message };
+  return { success: true, data: null, message: res.data.message };
+}
+
+// DELETE /api/v1/users/:id/block
+export async function unblockUser(userId: string): Promise<ApiResponse<null>> {
+  const res = await client.delete(`/users/${userId}/block`);
+  if (!res.data.success) return { success: false, data: null, message: res.data.message };
+  return { success: true, data: null, message: res.data.message };
+}
+
+// GET /api/v1/users/blocks
+export async function getBlockedUsers(): Promise<ApiResponse<BlockedUser[]>> {
+  const res = await client.get('/users/blocks');
+  if (!res.data.success) return { success: false, data: [], message: res.data.message };
+  return {
+    success: true,
+    data: res.data.data.map((u: any) => ({
+      id: String(u.id),
+      name: u.name,
+      avatarUrl: u.avatarUrl ?? undefined,
+      avatarColor: u.avatarColor ?? undefined,
+      blockedAt: u.blockedAt,
+    })),
+    message: '',
+  };
 }
 
 // ─── Calendar ─────────────────────────────────────────────────────────────────
@@ -568,6 +646,8 @@ export async function updateProfile(updates: {
   name?: string;
   avatar?: { uri: string; name: string; type: string };
   defaultPostVisibility?: 'public' | 'private';
+  avatarColor?: number;
+  removeAvatar?: boolean;
 }): Promise<ApiResponse<User>> {
   const form = new FormData();
   if (updates.name) form.append('name', updates.name);
@@ -575,6 +655,9 @@ export async function updateProfile(updates: {
     form.append('avatar', { uri: updates.avatar.uri, name: updates.avatar.name, type: updates.avatar.type } as any);
   }
   if (updates.defaultPostVisibility) form.append('defaultPostVisibility', updates.defaultPostVisibility);
+  // 0 是合法索引，不能用 truthy 判斷
+  if (updates.avatarColor !== undefined) form.append('avatarColor', String(updates.avatarColor));
+  if (updates.removeAvatar) form.append('removeAvatar', 'true');
   const res = await client.patch('/auth/profile', form, {
     headers: { 'Content-Type': 'multipart/form-data' },
   });
@@ -587,6 +670,7 @@ export async function updateProfile(updates: {
       name: u.name,
       email: u.email ?? '',
       avatarUrl: u.avatarUrl ?? undefined,
+      avatarColor: u.avatarColor ?? undefined,
       lastNameChangedAt: u.lastNameChangedAt ?? undefined,
       defaultPostVisibility: u.defaultPostVisibility ?? 'public',
     },
@@ -643,6 +727,11 @@ export interface ApiPlace {
   lat: number;
   lng: number;
   isFavorite?: boolean;
+  /* 合作夥伴。後端只在合作有效期內才回傳這幾個欄位 */
+  isPartner?: boolean;
+  description?: string;
+  tags?: string[];
+  photos?: string[];
 }
 
 export async function getNearbyPlaces(

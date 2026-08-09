@@ -7,18 +7,21 @@ import {
   Image,
   TextInput,
   Alert,
-  Dimensions,
+  useWindowDimensions,
   Modal,
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
+  ActionSheetIOS,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import * as ImagePicker from 'expo-image-picker';
 import { RootStackParamList } from '../../types/navigation';
-import { Colors } from '../../constants/colors';
+import Avatar from '../../components/ui/Avatar';
+import { ThemeColors } from '../../constants/themes';
+import { useTheme, useThemedStyles } from '../../context/ThemeContext';
 import { FontFamily, FontSize } from '../../constants/typography';
 import { useUser } from '../../context/UserContext';
 import { useAuth } from '../../context/AuthContext';
@@ -28,8 +31,8 @@ import { useState, useCallback, useEffect } from 'react';
 import { useFocusEffect, useRoute, RouteProp } from '@react-navigation/native';
 
 const CELL_GAP = 2;
-const SCREEN_WIDTH = Dimensions.get('window').width;
-const CELL_SIZE = (SCREEN_WIDTH - 40 - CELL_GAP * 2) / 3; // 40 = paddingHorizontal * 2
+// 40 = paddingHorizontal * 2；寬度在元件內用 useWindowDimensions 取得
+const cellSize = (screenW: number) => (screenW - 40 - CELL_GAP * 2) / 3;
 
 interface Comment {
   id: string;
@@ -44,7 +47,11 @@ type Props = {
 };
 
 export default function ProfileScreen({ navigation }: Props) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const insets = useSafeAreaInsets();
+  const { width: screenW } = useWindowDimensions();
+  const CELL_SIZE = cellSize(screenW);
   const { user, updateUser } = useUser();
   const { logout } = useAuth();
   const route = useRoute<RouteProp<RootStackParamList, 'Profile'>>();
@@ -195,6 +202,44 @@ export default function ProfileScreen({ navigation }: Props) {
     }
   };
 
+  const removeAvatar = async () => {
+    setAvatarUploading(true);
+    try {
+      await updateProfile({ removeAvatar: true });
+      // 後端回傳的 avatarUrl 是 null，但 User 型別用 undefined 表示沒有
+      updateUser({ avatarUrl: undefined });
+    } catch (e: any) {
+      Alert.alert('移除失敗', e?.message ?? '請稍後再試');
+    } finally {
+      setAvatarUploading(false);
+    }
+  };
+
+  // 已經有照片時先問要換還是移除，直接開相簿的話使用者沒有移除的入口
+  const handleAvatarPress = () => {
+    if (!user.avatarUrl) {
+      pickAvatar();
+      return;
+    }
+    const options = ['取消', '更換照片', '移除照片'];
+    const run = (i: number) => {
+      if (i === 1) pickAvatar();
+      if (i === 2) removeAvatar();
+    };
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        { options, cancelButtonIndex: 0, destructiveButtonIndex: 2, title: '頭像照片' },
+        run,
+      );
+    } else {
+      Alert.alert('頭像照片', undefined, [
+        { text: '更換照片', onPress: () => run(1) },
+        { text: '移除照片', style: 'destructive', onPress: () => run(2) },
+        { text: '取消', style: 'cancel' },
+      ]);
+    }
+  };
+
   const pickAvatar = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
@@ -241,7 +286,7 @@ export default function ProfileScreen({ navigation }: Props) {
       {/* Header */}
       <View style={[styles.appBar, { paddingTop: insets.top + 8 }]}>
         <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
-          <MaterialIcons name="arrow-back" size={24} color={Colors.onSurface} />
+          <MaterialIcons name="arrow-back" size={24} color={colors.onSurface} />
         </TouchableOpacity>
         <Text style={styles.appBarTitle}>個人資料</Text>
         <View style={{ width: 40 }} />
@@ -276,21 +321,21 @@ export default function ProfileScreen({ navigation }: Props) {
                           <ScrollView
                             horizontal
                             pagingEnabled={false}
-                            snapToInterval={SCREEN_WIDTH}
+                            snapToInterval={screenW}
                             snapToAlignment="start"
                             decelerationRate="fast"
                             showsHorizontalScrollIndicator={false}
-                            style={{ width: SCREEN_WIDTH }}
+                            style={{ width: screenW }}
                             onScroll={(e) =>
-                              setModalImageIndex(Math.round(e.nativeEvent.contentOffset.x / SCREEN_WIDTH))
+                              setModalImageIndex(Math.round(e.nativeEvent.contentOffset.x / screenW))
                             }
-                            scrollEventThrottle={SCREEN_WIDTH / 2}
+                            scrollEventThrottle={screenW / 2}
                           >
                             {imgs.map((url, idx) => (
                               <Image
                                 key={idx}
                                 source={{ uri: url }}
-                                style={{ width: SCREEN_WIDTH, aspectRatio: 4 / 3 }}
+                                style={{ width: screenW, aspectRatio: 4 / 3 }}
                                 resizeMode="cover"
                               />
                             ))}
@@ -307,24 +352,16 @@ export default function ProfileScreen({ navigation }: Props) {
                     })()}
                     <View style={styles.modalBody}>
                       <View style={styles.modalAuthorRow}>
-                        {user.avatarUrl ? (
-                          <Image source={{ uri: user.avatarUrl }} style={styles.modalAvatar} />
-                        ) : (
-                          <View style={[styles.modalAvatar, styles.modalAvatarFallback]}>
-                            <Text style={styles.modalAvatarInitials}>
-                              {user.name.split(' ').filter(Boolean).map((w) => w[0]).join('').toUpperCase() || '?'}
-                            </Text>
-                          </View>
-                        )}
+                        <Avatar url={user.avatarUrl} name={user.name} seed={user.id} colorIndex={user.avatarColor} size={40} />
                         <View style={{ flex: 1 }}>
                           <Text style={styles.modalAuthorName}>{user.name}</Text>
                           <Text style={styles.modalTimeAgo}>{selectedPost?.timeAgo}</Text>
                         </View>
                         <TouchableOpacity onPress={handleDeletePost} disabled={deletingPost} style={{ marginRight: 12 }}>
-                          <MaterialIcons name="delete-outline" size={22} color={Colors.error} />
+                          <MaterialIcons name="delete-outline" size={22} color={colors.error} />
                         </TouchableOpacity>
                         <TouchableOpacity onPress={closeModal}>
-                          <MaterialIcons name="close" size={22} color={Colors.onSurfaceVariant} />
+                          <MaterialIcons name="close" size={22} color={colors.onSurfaceVariant} />
                         </TouchableOpacity>
                       </View>
                       <Text style={styles.modalContent}>{selectedPost?.content}</Text>
@@ -347,14 +384,14 @@ export default function ProfileScreen({ navigation }: Props) {
                       <MaterialIcons
                         name={selectedPost && likedPosts[selectedPost.id] ? 'favorite' : 'favorite-border'}
                         size={22}
-                        color={selectedPost && likedPosts[selectedPost.id] ? Colors.primary : Colors.onSurfaceVariant}
+                        color={selectedPost && likedPosts[selectedPost.id] ? colors.primary : colors.onSurfaceVariant}
                       />
-                      <Text style={[styles.modalActionCount, selectedPost && likedPosts[selectedPost.id] && { color: Colors.primary }]}>
+                      <Text style={[styles.modalActionCount, selectedPost && likedPosts[selectedPost.id] && { color: colors.primary }]}>
                         {selectedPost ? selectedPost.likes + (likedPosts[selectedPost.id] ? 1 : 0) : 0}
                       </Text>
                     </TouchableOpacity>
                     <TouchableOpacity style={styles.modalActionBtn} onPress={() => selectedPost && openComments(selectedPost)}>
-                      <MaterialIcons name="chat-bubble-outline" size={22} color={Colors.onSurfaceVariant} />
+                      <MaterialIcons name="chat-bubble-outline" size={22} color={colors.onSurfaceVariant} />
                       <Text style={styles.modalActionCount}>
                         {selectedPost ? selectedPost.comments + (commentsByPostId[selectedPost.id]?.length ?? 0) : 0}
                       </Text>
@@ -366,22 +403,14 @@ export default function ProfileScreen({ navigation }: Props) {
                 <>
                   <View style={styles.commentsHeader}>
                     <TouchableOpacity onPress={() => setShowComments(false)} style={styles.commentsBackBtn}>
-                      <MaterialIcons name="arrow-back" size={20} color={Colors.onSurface} />
+                      <MaterialIcons name="arrow-back" size={20} color={colors.onSurface} />
                     </TouchableOpacity>
                     <View style={styles.commentsAuthorRow}>
-                      {user.avatarUrl ? (
-                        <Image source={{ uri: user.avatarUrl }} style={styles.commentsAvatar} />
-                      ) : (
-                        <View style={[styles.commentsAvatar, styles.modalAvatarFallback]}>
-                          <Text style={styles.commentsAvatarInitials}>
-                            {user.name.split(' ').filter(Boolean).map((w) => w[0]).join('').toUpperCase() || '?'}
-                          </Text>
-                        </View>
-                      )}
+                      <Avatar url={user.avatarUrl} name={user.name} seed={user.id} colorIndex={user.avatarColor} size={32} />
                       <Text style={styles.commentsAuthorName} numberOfLines={1}>{user.name}</Text>
                     </View>
                     <TouchableOpacity onPress={closeModal}>
-                      <MaterialIcons name="close" size={22} color={Colors.onSurfaceVariant} />
+                      <MaterialIcons name="close" size={22} color={colors.onSurfaceVariant} />
                     </TouchableOpacity>
                   </View>
                   {selectedPost?.content && (
@@ -390,9 +419,9 @@ export default function ProfileScreen({ navigation }: Props) {
                   <View style={styles.commentsDivider} />
                   <ScrollView style={styles.commentsList} contentContainerStyle={styles.commentsListContent} showsVerticalScrollIndicator={false}>
                     {commentsLoading ? (
-                      <Text style={{ textAlign: 'center', color: Colors.onSurfaceVariant, paddingVertical: 16 }}>載入中...</Text>
+                      <Text style={{ textAlign: 'center', color: colors.onSurfaceVariant, paddingVertical: 16 }}>載入中...</Text>
                     ) : (commentsByPostId[selectedPost?.id ?? ''] ?? []).length === 0 ? (
-                      <Text style={{ textAlign: 'center', color: Colors.outlineVariant, paddingVertical: 16 }}>還沒有留言</Text>
+                      <Text style={{ textAlign: 'center', color: colors.outlineVariant, paddingVertical: 16 }}>還沒有留言</Text>
                     ) : null}
                     {(commentsByPostId[selectedPost?.id ?? ''] ?? []).map((c) => (
                       <View key={c.id} style={styles.commentItem}>
@@ -413,7 +442,7 @@ export default function ProfileScreen({ navigation }: Props) {
                     <TextInput
                       style={styles.commentTextInput}
                       placeholder="留下你的留言..."
-                      placeholderTextColor={Colors.outlineVariant}
+                      placeholderTextColor={colors.outlineVariant}
                       value={commentText}
                       onChangeText={setCommentText}
                       multiline
@@ -425,7 +454,7 @@ export default function ProfileScreen({ navigation }: Props) {
                       onPress={submitComment}
                       disabled={!commentText.trim()}
                     >
-                      <MaterialIcons name="send" size={18} color={Colors.onPrimary} />
+                      <MaterialIcons name="send" size={18} color={colors.onPrimary} />
                     </TouchableOpacity>
                   </View>
                 </>
@@ -439,22 +468,20 @@ export default function ProfileScreen({ navigation }: Props) {
         {/* Avatar */}
         <View style={styles.avatarSection}>
           <View style={styles.avatarWrap}>
-            {(localAvatarUri ?? user.avatarUrl) ? (
-              <Image source={{ uri: localAvatarUri ?? user.avatarUrl }} style={styles.avatar} />
-            ) : (
-              <View style={[styles.avatar, styles.avatarFallback]}>
-                <Text style={styles.avatarInitials}>
-                  {user.name.split(' ').filter(Boolean).map((w) => w[0]).join('').toUpperCase() || '?'}
-                </Text>
-              </View>
-            )}
+            <Avatar
+              url={localAvatarUri ?? user.avatarUrl}
+              name={user.name}
+              seed={user.id}
+              colorIndex={user.avatarColor}
+              size={96}
+            />
             {avatarUploading && (
               <View style={styles.avatarLoadingOverlay}>
-                <ActivityIndicator size="small" color={Colors.onPrimary} />
+                <ActivityIndicator size="small" color={colors.onPrimary} />
               </View>
             )}
-            <TouchableOpacity style={styles.avatarEdit} onPress={pickAvatar} disabled={avatarUploading}>
-              <MaterialIcons name="photo-camera" size={16} color={Colors.onPrimary} />
+            <TouchableOpacity style={styles.avatarEdit} onPress={handleAvatarPress} disabled={avatarUploading}>
+              <MaterialIcons name="photo-camera" size={16} color={colors.onPrimary} />
             </TouchableOpacity>
           </View>
 
@@ -471,20 +498,20 @@ export default function ProfileScreen({ navigation }: Props) {
                     onSubmitEditing={saveName}
                   />
                   <TouchableOpacity onPress={saveName} style={styles.nameActionBtn}>
-                    <MaterialIcons name="check" size={18} color={Colors.primary} />
+                    <MaterialIcons name="check" size={18} color={colors.primary} />
                   </TouchableOpacity>
                   <TouchableOpacity
                     onPress={() => { setDraftName(user.name); setEditingName(false); }}
                     style={styles.nameActionBtn}
                   >
-                    <MaterialIcons name="close" size={18} color={Colors.onSurfaceVariant} />
+                    <MaterialIcons name="close" size={18} color={colors.onSurfaceVariant} />
                   </TouchableOpacity>
                 </View>
               ) : (
                 <View style={styles.nameRow}>
                   <Text style={styles.displayName}>{user.name}</Text>
                   <TouchableOpacity onPress={handleNameEditPress} style={styles.nameEditBtn}>
-                    <MaterialIcons name="edit" size={15} color={Colors.onSurfaceVariant} />
+                    <MaterialIcons name="edit" size={15} color={colors.onSurfaceVariant} />
                   </TouchableOpacity>
                 </View>
               )}
@@ -536,15 +563,16 @@ export default function ProfileScreen({ navigation }: Props) {
                 { icon: 'pets' as const, label: '我的寵物', onPress: () => navigation.navigate('MainTabs', { screen: 'MyPets' }) },
                 { icon: 'notifications-none' as const, label: '通知設定', onPress: () => navigation.navigate('NotificationSettings') },
                 { icon: 'lock-outline' as const, label: '隱私與安全', onPress: () => navigation.navigate('PrivacySecurity') },
+                { icon: 'palette' as const, label: '外觀', onPress: () => navigation.navigate('Appearance') },
                 { icon: 'help-outline' as const, label: '幫助與支援', onPress: () => navigation.navigate('HelpSupport') },
               ].map((item, i, arr) => (
                 <View key={item.label}>
                   <TouchableOpacity style={styles.menuItem} onPress={item.onPress} disabled={!item.onPress}>
                     <View style={styles.menuIconWrap}>
-                      <MaterialIcons name={item.icon} size={20} color={Colors.primary} />
+                      <MaterialIcons name={item.icon} size={20} color={colors.primary} />
                     </View>
                     <Text style={styles.menuLabel}>{item.label}</Text>
-                    <MaterialIcons name="chevron-right" size={20} color={Colors.outlineVariant} />
+                    <MaterialIcons name="chevron-right" size={20} color={colors.outlineVariant} />
                   </TouchableOpacity>
                   {i < arr.length - 1 && <View style={styles.divider} />}
                 </View>
@@ -552,7 +580,7 @@ export default function ProfileScreen({ navigation }: Props) {
             </View>
 
             <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
-              <MaterialIcons name="logout" size={20} color={Colors.error} />
+              <MaterialIcons name="logout" size={20} color={colors.error} />
               <Text style={styles.logoutLabel}>登出</Text>
             </TouchableOpacity>
 
@@ -564,18 +592,18 @@ export default function ProfileScreen({ navigation }: Props) {
         {activeTab === 'posts' && (
           myPosts.length === 0 ? (
             <View style={styles.emptyPosts}>
-              <MaterialIcons name="photo-library" size={40} color={Colors.outlineVariant} />
+              <MaterialIcons name="photo-library" size={40} color={colors.outlineVariant} />
               <Text style={styles.emptyPostsText}>還沒有貼文</Text>
             </View>
           ) : (
             <View style={styles.grid}>
               {myPosts.map((post) => (
-                <TouchableOpacity key={post.id} activeOpacity={0.85} style={styles.gridCell} onPress={() => setSelectedPost(post)}>
+                <TouchableOpacity key={post.id} activeOpacity={0.85} style={[styles.gridCell, { width: CELL_SIZE, height: CELL_SIZE }]} onPress={() => setSelectedPost(post)}>
                   {post.imageUrl ? (
                     <Image source={{ uri: post.imageUrl }} style={styles.gridCellImage} resizeMode="cover" />
                   ) : (
                     <View style={styles.gridCellFallback}>
-                      <MaterialIcons name="format-quote" size={16} color={Colors.onPrimaryContainer} style={{ opacity: 0.4 }} />
+                      <MaterialIcons name="format-quote" size={16} color={colors.onPrimaryContainer} style={{ opacity: 0.4 }} />
                       <Text style={styles.gridCellFallbackText} numberOfLines={5}>{post.content}</Text>
                     </View>
                   )}
@@ -596,8 +624,8 @@ export default function ProfileScreen({ navigation }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background },
+const makeStyles = (c: ThemeColors) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: c.background },
 
   appBar: {
     flexDirection: 'row',
@@ -605,13 +633,13 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingBottom: 8,
-    backgroundColor: Colors.background,
+    backgroundColor: c.background,
   },
   backBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   appBarTitle: {
     fontFamily: FontFamily.headlineSemiBold,
     fontSize: FontSize.bodyLG,
-    color: Colors.primary,
+    color: c.primary,
   },
 
   content: { paddingHorizontal: 20, paddingBottom: 40, gap: 16 },
@@ -624,9 +652,9 @@ const styles = StyleSheet.create({
   nameInput: {
     fontFamily: FontFamily.headlineBold,
     fontSize: FontSize.headlineMD,
-    color: Colors.onSurface,
+    color: c.onSurface,
     borderBottomWidth: 1.5,
-    borderBottomColor: Colors.primary,
+    borderBottomColor: c.primary,
     paddingVertical: 2,
     minWidth: 120,
     textAlign: 'center',
@@ -643,16 +671,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  avatarFallback: {
-    backgroundColor: Colors.primaryContainer,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  avatarInitials: {
-    fontFamily: FontFamily.headlineBold,
-    fontSize: 32,
-    color: Colors.onPrimaryContainer,
-  },
   avatarEdit: {
     position: 'absolute',
     bottom: 0,
@@ -660,52 +678,52 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: Colors.primary,
+    backgroundColor: c.primary,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 2,
-    borderColor: Colors.background,
+    borderColor: c.background,
   },
   displayName: {
     fontFamily: FontFamily.headlineBold,
     fontSize: FontSize.headlineMD,
-    color: Colors.onSurface,
+    color: c.onSurface,
   },
   displayEmail: {
     fontFamily: FontFamily.bodyMedium,
     fontSize: FontSize.bodyMD,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
   },
 
 
   // Stats
   statsRow: {
     flexDirection: 'row',
-    backgroundColor: Colors.surfaceContainerLowest,
+    backgroundColor: c.surfaceContainerLowest,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: Colors.surfaceVariant,
+    borderColor: c.surfaceVariant,
     paddingVertical: 16,
   },
   statItem: { flex: 1, alignItems: 'center', gap: 2 },
   statNum: {
     fontFamily: FontFamily.headlineBold,
     fontSize: FontSize.headlineMD,
-    color: Colors.onSurface,
+    color: c.onSurface,
   },
   statLabel: {
     fontFamily: FontFamily.bodyMedium,
     fontSize: FontSize.labelMD,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
   },
-  statDivider: { width: 1, backgroundColor: Colors.surfaceVariant },
+  statDivider: { width: 1, backgroundColor: c.surfaceVariant },
 
   // Menu
   menuCard: {
-    backgroundColor: Colors.surfaceContainerLowest,
+    backgroundColor: c.surfaceContainerLowest,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: Colors.surfaceVariant,
+    borderColor: c.surfaceVariant,
     overflow: 'hidden',
   },
   menuItem: {
@@ -719,7 +737,7 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 12,
-    backgroundColor: Colors.primaryFixed,
+    backgroundColor: c.primaryFixed,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -727,9 +745,9 @@ const styles = StyleSheet.create({
     flex: 1,
     fontFamily: FontFamily.headlineMedium,
     fontSize: FontSize.bodyMD,
-    color: Colors.onSurface,
+    color: c.onSurface,
   },
-  divider: { height: 1, backgroundColor: Colors.surfaceVariant, marginLeft: 64 },
+  divider: { height: 1, backgroundColor: c.surfaceVariant, marginLeft: 64 },
 
   // Logout
   logoutBtn: {
@@ -737,28 +755,28 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    backgroundColor: Colors.errorContainer,
+    backgroundColor: c.errorContainer,
     borderRadius: 20,
     paddingVertical: 14,
   },
   logoutLabel: {
     fontFamily: FontFamily.headlineSemiBold,
     fontSize: FontSize.bodyMD,
-    color: Colors.error,
+    color: c.error,
   },
 
   version: {
     textAlign: 'center',
     fontFamily: FontFamily.bodyMedium,
     fontSize: FontSize.labelSM,
-    color: Colors.outlineVariant,
+    color: c.outlineVariant,
   },
 
   // Tabs
   tabBar: {
     flexDirection: 'row',
     borderBottomWidth: 1,
-    borderBottomColor: Colors.surfaceVariant,
+    borderBottomColor: c.surfaceVariant,
   },
   tabItem: {
     flex: 1,
@@ -769,11 +787,11 @@ const styles = StyleSheet.create({
   tabLabel: {
     fontFamily: FontFamily.headlineMedium,
     fontSize: FontSize.bodyMD,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
   },
   tabLabelActive: {
     fontFamily: FontFamily.headlineSemiBold,
-    color: Colors.primary,
+    color: c.primary,
   },
   tabIndicator: {
     height: 2,
@@ -782,12 +800,12 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
   },
   tabIndicatorActive: {
-    backgroundColor: Colors.primary,
+    backgroundColor: c.primary,
   },
 
   // Posts grid
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: CELL_GAP },
-  gridCell: { width: CELL_SIZE, height: CELL_SIZE, borderRadius: 8, overflow: 'hidden' },
+  gridCell: { borderRadius: 8, overflow: 'hidden' },
   gridCellTypeBadge: {
     position: 'absolute',
     top: 4,
@@ -807,7 +825,7 @@ const styles = StyleSheet.create({
   gridCellFallback: {
     width: '100%',
     height: '100%',
-    backgroundColor: Colors.primaryFixed,
+    backgroundColor: c.primaryFixed,
     padding: 10,
     justifyContent: 'center',
     gap: 4,
@@ -815,30 +833,30 @@ const styles = StyleSheet.create({
   gridCellFallbackText: {
     fontFamily: FontFamily.bodyMedium,
     fontSize: FontSize.labelSM,
-    color: Colors.onPrimaryContainer,
+    color: c.onPrimaryContainer,
     lineHeight: 16,
   },
   emptyPosts: { alignItems: 'center', gap: 12, paddingVertical: 40 },
   emptyPostsText: {
     fontFamily: FontFamily.bodyMedium,
     fontSize: FontSize.bodyMD,
-    color: Colors.outlineVariant,
+    color: c.outlineVariant,
   },
 
   // Post detail modal
   modalOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.5)' },
   modalDismiss: { flex: 1 },
   modalSheet: {
-    backgroundColor: Colors.background,
+    backgroundColor: c.background,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    maxHeight: Dimensions.get('window').height * 0.85,
+    maxHeight: '85%',
     borderTopWidth: 1,
-    borderColor: Colors.surfaceVariant,
+    borderColor: c.surfaceVariant,
     overflow: 'hidden',
   },
   modalHandleRow: { alignItems: 'center', paddingVertical: 10 },
-  modalHandle: { width: 36, height: 4, borderRadius: 2, backgroundColor: Colors.outlineVariant },
+  modalHandle: { width: 36, height: 4, borderRadius: 2, backgroundColor: c.outlineVariant },
   modalImage: { width: '100%', aspectRatio: 4 / 3 },
   modalImageDots: {
     flexDirection: 'row',
@@ -850,45 +868,34 @@ const styles = StyleSheet.create({
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: Colors.outlineVariant,
+    backgroundColor: c.outlineVariant,
   },
   modalImageDotActive: {
-    backgroundColor: Colors.primary,
+    backgroundColor: c.primary,
     width: 16,
     borderRadius: 3,
   },
   modalBody: { padding: 16, gap: 12 },
   modalAuthorRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  modalAvatar: { width: 40, height: 40, borderRadius: 20 },
-  modalAvatarFallback: {
-    backgroundColor: Colors.primaryContainer,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  modalAvatarInitials: {
-    fontFamily: FontFamily.headlineBold,
-    fontSize: FontSize.labelMD,
-    color: Colors.onPrimaryContainer,
-  },
   modalAuthorName: {
     fontFamily: FontFamily.headlineSemiBold,
     fontSize: FontSize.bodyMD,
-    color: Colors.onSurface,
+    color: c.onSurface,
   },
   modalTimeAgo: {
     fontFamily: FontFamily.bodyMedium,
     fontSize: FontSize.labelSM,
-    color: Colors.outline,
+    color: c.outline,
   },
   modalContent: {
     fontFamily: FontFamily.bodyMedium,
     fontSize: FontSize.bodyMD,
-    color: Colors.onSurface,
+    color: c.onSurface,
     lineHeight: 24,
   },
   modalHashtagRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   modalHashtag: {
-    backgroundColor: Colors.secondaryContainer + '55',
+    backgroundColor: c.secondaryContainer + '55',
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 9999,
@@ -896,7 +903,7 @@ const styles = StyleSheet.create({
   modalHashtagText: {
     fontFamily: FontFamily.headlineMedium,
     fontSize: FontSize.labelSM,
-    color: Colors.secondary,
+    color: c.secondary,
   },
   modalActions: {
     flexDirection: 'row',
@@ -905,13 +912,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderTopWidth: 1,
-    borderTopColor: Colors.surfaceVariant,
+    borderTopColor: c.surfaceVariant,
   },
   modalActionBtn: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   modalActionCount: {
     fontFamily: FontFamily.headlineSemiBold,
     fontSize: FontSize.bodyMD,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
   },
 
   // Comments view
@@ -924,27 +931,21 @@ const styles = StyleSheet.create({
   },
   commentsBackBtn: { padding: 4 },
   commentsAuthorRow: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 },
-  commentsAvatar: { width: 32, height: 32, borderRadius: 16 },
-  commentsAvatarInitials: {
-    fontFamily: FontFamily.headlineBold,
-    fontSize: FontSize.labelSM,
-    color: Colors.onPrimaryContainer,
-  },
   commentsAuthorName: {
     flex: 1,
     fontFamily: FontFamily.headlineSemiBold,
     fontSize: FontSize.bodyMD,
-    color: Colors.onSurface,
+    color: c.onSurface,
   },
   commentsPostPreview: {
     paddingHorizontal: 16,
     paddingBottom: 12,
     fontFamily: FontFamily.bodyMedium,
     fontSize: FontSize.bodyMD,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
     lineHeight: 20,
   },
-  commentsDivider: { height: 1, backgroundColor: Colors.surfaceVariant, marginHorizontal: 16 },
+  commentsDivider: { height: 1, backgroundColor: c.surfaceVariant, marginHorizontal: 16 },
   commentsList: { maxHeight: 280 },
   commentsListContent: { padding: 16, gap: 12 },
   commentItem: { flexDirection: 'row', gap: 10, alignItems: 'flex-start' },
@@ -952,18 +953,18 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: Colors.primaryContainer,
+    backgroundColor: c.primaryContainer,
     alignItems: 'center',
     justifyContent: 'center',
   },
   commentAvatarInitials: {
     fontFamily: FontFamily.headlineBold,
     fontSize: FontSize.labelSM,
-    color: Colors.onPrimaryContainer,
+    color: c.onPrimaryContainer,
   },
   commentBubble: {
     flex: 1,
-    backgroundColor: Colors.surfaceContainerLow,
+    backgroundColor: c.surfaceContainerLow,
     borderRadius: 14,
     padding: 12,
     gap: 4,
@@ -971,18 +972,18 @@ const styles = StyleSheet.create({
   commentAuthor: {
     fontFamily: FontFamily.headlineSemiBold,
     fontSize: FontSize.labelMD,
-    color: Colors.onSurface,
+    color: c.onSurface,
   },
   commentContent: {
     fontFamily: FontFamily.bodyMedium,
     fontSize: FontSize.bodyMD,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
     lineHeight: 20,
   },
   commentTime: {
     fontFamily: FontFamily.bodyMedium,
     fontSize: FontSize.labelSM,
-    color: Colors.outline,
+    color: c.outline,
     alignSelf: 'flex-end',
   },
   commentInputBar: {
@@ -993,14 +994,14 @@ const styles = StyleSheet.create({
     paddingTop: 10,
     paddingBottom: 8,
     borderTopWidth: 1,
-    borderTopColor: Colors.surfaceVariant,
-    backgroundColor: Colors.surfaceContainerLow,
+    borderTopColor: c.surfaceVariant,
+    backgroundColor: c.surfaceContainerLow,
   },
   commentTextInput: {
     flex: 1,
     fontFamily: FontFamily.bodyMedium,
     fontSize: FontSize.bodyMD,
-    color: Colors.onSurface,
+    color: c.onSurface,
     maxHeight: 80,
     paddingVertical: 8,
   },
@@ -1008,7 +1009,7 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: Colors.primary,
+    backgroundColor: c.primary,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 2,

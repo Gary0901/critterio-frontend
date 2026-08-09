@@ -1,15 +1,15 @@
 import { useEffect, useRef } from 'react';
+import { ThemeColors } from '../../constants/themes';
+import { useTheme, useThemedStyles } from '../../context/ThemeContext';
 import {
   View,
   Image,
   Animated,
   Easing,
   StyleSheet,
-  Dimensions,
+  useWindowDimensions,
   ImageSourcePropType,
 } from 'react-native';
-
-const SCREEN_W = Dimensions.get('window').width;
 
 interface Props {
   size?: number;
@@ -22,13 +22,18 @@ interface Props {
 
 export default function HamsterLoading({
   size = 200,
-  color = '#3B1F0A',
+  color: colorProp,
   hamsterSource,
   wheelSource,
   spinDuration = 1300,
   showProgress = true,
 }: Props) {
+  const { colors: themeColors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
+  const { width: screenW } = useWindowDimensions();
   const scale = size / 200;
+  // 預設值不能寫在參數上 —— 那裡取不到 theme
+  const color = colorProp ?? themeColors.primary;
 
   const spinAnim = useRef(new Animated.Value(0)).current;
   const progressAnim = useRef(new Animated.Value(0)).current;
@@ -117,7 +122,7 @@ export default function HamsterLoading({
     outputRange: ['0deg', '360deg'],
   });
 
-  const BAR_W = SCREEN_W * 0.7;
+  const BAR_W = screenW * 0.7;
   const progressWidth = progressAnim.interpolate({
     inputRange: [0, 1],
     outputRange: [0, BAR_W],
@@ -282,7 +287,7 @@ function WheelDrawing({ size, color }: { size: number; color: string }) {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (c: ThemeColors) => StyleSheet.create({
   container: {
     position: 'relative',
   },

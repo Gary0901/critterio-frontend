@@ -1,7 +1,8 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
-import { Colors } from '../../constants/colors';
+import { ThemeColors } from '../../constants/themes';
+import { useTheme, useThemedStyles } from '../../context/ThemeContext';
 import { FontFamily, FontSize } from '../../constants/typography';
 import { PetStatus } from '../../types';
 
@@ -10,26 +11,30 @@ interface Props {
   label: string;
 }
 
-const statusConfig: Record<PetStatus, { bg: string; text: string; icon: keyof typeof MaterialIcons.glyphMap }> = {
+const makeStatusConfig = (
+  c: ThemeColors,
+): Record<PetStatus, { bg: string; text: string; icon: keyof typeof MaterialIcons.glyphMap }> => ({
   healthy: {
-    bg: Colors.secondaryContainer,
-    text: Colors.onSecondaryContainer,
+    bg: c.secondaryContainer,
+    text: c.onSecondaryContainer,
     icon: 'check-circle',
   },
   due_soon: {
-    bg: Colors.errorContainer,
-    text: Colors.onErrorContainer,
+    bg: c.errorContainer,
+    text: c.onErrorContainer,
     icon: 'event-repeat',
   },
   warning: {
-    bg: Colors.primaryFixed,
-    text: Colors.primary,
+    bg: c.primaryFixed,
+    text: c.primary,
     icon: 'info',
   },
-};
+});
 
 export default function Badge({ status, label }: Props) {
-  const config = statusConfig[status];
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
+  const config = makeStatusConfig(colors)[status];
   return (
     <View style={[styles.container, { backgroundColor: config.bg }]}>
       <MaterialIcons name={config.icon} size={12} color={config.text} />
@@ -38,7 +43,7 @@ export default function Badge({ status, label }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (c: ThemeColors) => StyleSheet.create({
   container: {
     flexDirection: 'row',
     alignItems: 'center',

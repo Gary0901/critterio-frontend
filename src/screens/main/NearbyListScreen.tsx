@@ -8,7 +8,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { MaterialIcons } from '@expo/vector-icons';
-import { Colors } from '../../constants/colors';
+import { ThemeColors } from '../../constants/themes';
+import { useTheme, useThemedStyles } from '../../context/ThemeContext';
 import { FontFamily, FontSize } from '../../constants/typography';
 import { getNearbyPlaces, getMapFavorites, addMapFavorite, removeMapFavorite, ApiPlace } from '../../api';
 import { BASE_URL } from '../../api/client';
@@ -25,21 +26,34 @@ interface ListPlace extends ApiPlace {
   todayHours?: string;
 }
 
+/**
+ * 合作夥伴置頂的距離上限。超過這個距離就照一般距離排序 ——
+ * 把 10 公里外的夥伴排在 200 公尺的醫院前面，對使用者是幫倒忙，
+ * 「附近地點」這個功能也就失去意義了。
+ */
+const PARTNER_PIN_RADIUS_M = 3000;
+
+/** 置頂範圍內的夥伴排最前面，其餘一律照距離 */
+function byPartnerThenDistance(a: ListPlace, b: ListPlace): number {
+  const rank = (p: ListPlace) => (p.isPartner && p.distanceM <= PARTNER_PIN_RADIUS_M ? 0 : 1);
+  return rank(a) - rank(b) || a.distanceM - b.distanceM;
+}
+
 // ─── Config ───────────────────────────────────────────────────────────────────
 
-const CATEGORY_CONFIG: Record<PlaceCategory, {
+const makeCategoryConfig = (c: ThemeColors): Record<PlaceCategory, {
   icon: keyof typeof MaterialIcons.glyphMap;
   label: string;
   bgColor: string;
   iconColor: string;
-}> = {
-  vet:        { icon: 'local-hospital', label: '醫院',   bgColor: '#FFDAD6', iconColor: '#BA1A1A' },
-  grooming:   { icon: 'content-cut',    label: '美容',   bgColor: '#E8DEF8', iconColor: '#6750A4' },
-  petstore:   { icon: 'shopping-bag',   label: '用品店', bgColor: '#FFDCC5', iconColor: '#602E00' },
-  hotel:      { icon: 'pets',           label: '旅館',   bgColor: '#D3E4CD', iconColor: '#2D6A4F' },
-  park:       { icon: 'local-florist',  label: '公園',   bgColor: '#CCE8C4', iconColor: '#4A6549' },
-  restaurant: { icon: 'restaurant',     label: '餐廳',   bgColor: '#FFF9C4', iconColor: '#F9A825' },
-};
+}> => ({
+  vet:        { icon: 'local-hospital', label: '醫院',   bgColor: c.catHospitalBg, iconColor: c.catHospital },
+  grooming:   { icon: 'content-cut',    label: '美容',   bgColor: c.catGroomingBg, iconColor: c.catGrooming },
+  petstore:   { icon: 'shopping-bag',   label: '用品店', bgColor: c.catStoreBg, iconColor: c.catStore },
+  hotel:      { icon: 'pets',           label: '旅館',   bgColor: c.catHotelBg, iconColor: c.catHotel },
+  park:       { icon: 'local-florist',  label: '公園',   bgColor: c.catParkBg, iconColor: c.catPark },
+  restaurant: { icon: 'restaurant',     label: '餐廳',   bgColor: c.catRestaurantBg, iconColor: c.warning },
+});
 
 const FILTERS: { key: FilterOption; label: string }[] = [
   { key: 'all',        label: '全部' },
@@ -107,7 +121,9 @@ function PlaceRow({
   isFav: boolean;
   onToggleFavorite: () => void;
 }) {
-  const cfg = CATEGORY_CONFIG[place.category];
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
+  const cfg = makeCategoryConfig(colors)[place.category];
 
   function openPhone() {
     if (place.phone) Linking.openURL(`tel:${place.phone.replace(/\s/g, '')}`);
@@ -137,6 +153,9 @@ function PlaceRow({
       {/* 內容 */}
       <View style={styles.rowContent}>
         <View style={styles.rowTop}>
+          {place.isPartner && (
+            <MaterialIcons name="verified" size={16} color={colors.primary} style={styles.partnerIcon} />
+          )}
           <Text style={styles.name} numberOfLines={1}>{place.name}</Text>
           <View style={styles.distBadge}>
             <Text style={styles.distText}>{formatDistance(place.distanceM)}</Text>
@@ -144,6 +163,12 @@ function PlaceRow({
         </View>
 
         <View style={styles.tagRow}>
+          {place.isPartner && (
+            <View style={styles.partnerTag}>
+              <MaterialIcons name="verified" size={11} color={colors.onPrimary} />
+              <Text style={styles.partnerTagText}>合作夥伴</Text>
+            </View>
+          )}
           <View style={[styles.catTag, { backgroundColor: cfg.bgColor }]}>
             <Text style={[styles.catTagText, { color: cfg.iconColor }]}>{cfg.label}</Text>
           </View>
@@ -160,13 +185,13 @@ function PlaceRow({
         <View style={styles.metaRow}>
           {place.phone ? (
             <TouchableOpacity style={styles.metaItem} onPress={openPhone}>
-              <MaterialIcons name="phone" size={12} color={Colors.primary} />
-              <Text style={[styles.metaText, { color: Colors.primary }]}>{place.phone}</Text>
+              <MaterialIcons name="phone" size={12} color={colors.primary} />
+              <Text style={[styles.metaText, { color: colors.primary }]}>{place.phone}</Text>
             </TouchableOpacity>
           ) : null}
           {place.todayHours ? (
             <View style={styles.metaItem}>
-              <MaterialIcons name="access-time" size={12} color={Colors.onSurfaceVariant} />
+              <MaterialIcons name="access-time" size={12} color={colors.onSurfaceVariant} />
               <Text style={styles.metaText}>{place.todayHours}</Text>
             </View>
           ) : null}
@@ -183,10 +208,10 @@ function PlaceRow({
           <MaterialIcons
             name={isFav ? 'favorite' : 'favorite-border'}
             size={20}
-            color={isFav ? '#E53935' : Colors.outline}
+            color={isFav ? colors.favorite : colors.outline}
           />
         </TouchableOpacity>
-        <MaterialIcons name="chevron-right" size={20} color={Colors.outline} />
+        <MaterialIcons name="chevron-right" size={20} color={colors.outline} />
       </View>
     </TouchableOpacity>
   );
@@ -201,6 +226,8 @@ interface Props {
 }
 
 export default function NearbyListScreen({ onSwitchToMap, favoriteIds, onToggleFavorite }: Props = {}) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [places, setPlaces] = useState<ListPlace[]>([]);
@@ -271,7 +298,7 @@ export default function NearbyListScreen({ onSwitchToMap, favoriteIds, onToggleF
             distanceM: haversineM(userLoc.lat, userLoc.lng, p.lat, p.lng),
             todayHours: todayHours(p.weekdayHours),
           }));
-          mapped.sort((a, b) => a.distanceM - b.distanceM);
+          mapped.sort(byPartnerThenDistance);
           setPlaces(mapped);
         }
       })
@@ -295,7 +322,7 @@ export default function NearbyListScreen({ onSwitchToMap, favoriteIds, onToggleF
             distanceM: userLoc ? haversineM(userLoc.lat, userLoc.lng, p.lat, p.lng) : 0,
             todayHours: todayHours(p.weekdayHours),
           }));
-          if (userLoc) mapped.sort((a, b) => a.distanceM - b.distanceM);
+          if (userLoc) mapped.sort(byPartnerThenDistance);
           setFavoritePlaces(mapped);
           if (favoriteIds === undefined) setLocalFavIds(new Set(mapped.map(p => String(p.id))));
         }
@@ -339,18 +366,18 @@ export default function NearbyListScreen({ onSwitchToMap, favoriteIds, onToggleF
     <View style={[styles.container, { paddingTop: insets.top }]}>
       {/* 搜尋列 */}
       <View style={styles.searchBar}>
-        <MaterialIcons name="search" size={20} color={Colors.onSurfaceVariant} />
+        <MaterialIcons name="search" size={20} color={colors.onSurfaceVariant} />
         <TextInput
           style={styles.searchInput}
           placeholder="搜尋附近地點..."
-          placeholderTextColor={Colors.outline}
+          placeholderTextColor={colors.outline}
           value={search}
           onChangeText={setSearch}
           returnKeyType="search"
         />
         {search.length > 0 && (
           <TouchableOpacity onPress={() => setSearch('')}>
-            <MaterialIcons name="close" size={18} color={Colors.outline} />
+            <MaterialIcons name="close" size={18} color={colors.outline} />
           </TouchableOpacity>
         )}
         {(activeFilter === 'vet' || activeFilter === 'petstore' || activeFilter === 'grooming') && (
@@ -368,7 +395,7 @@ export default function NearbyListScreen({ onSwitchToMap, favoriteIds, onToggleF
             onPress={onSwitchToMap}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
-            <MaterialIcons name="map" size={20} color={Colors.primary} />
+            <MaterialIcons name="map" size={20} color={colors.primary} />
           </TouchableOpacity>
         )}
       </View>
@@ -383,7 +410,7 @@ export default function NearbyListScreen({ onSwitchToMap, favoriteIds, onToggleF
         {FILTERS.map((f) => {
           const isActive = activeFilter === f.key;
           const isFavFilter = f.key === 'favorites';
-          const cfg = (!isFavFilter && f.key !== 'all') ? CATEGORY_CONFIG[f.key as PlaceCategory] : null;
+          const cfg = (!isFavFilter && f.key !== 'all') ? makeCategoryConfig(colors)[f.key as PlaceCategory] : null;
           return (
             <TouchableOpacity
               key={f.key}
@@ -394,13 +421,13 @@ export default function NearbyListScreen({ onSwitchToMap, favoriteIds, onToggleF
                 <MaterialIcons
                   name={isActive ? 'favorite' : 'favorite-border'}
                   size={16}
-                  color={isActive ? Colors.onSecondary : '#E53935'}
+                  color={isActive ? colors.onSecondary : colors.favorite}
                 />
               ) : cfg ? (
                 <MaterialIcons
                   name={cfg.icon}
                   size={16}
-                  color={isActive ? Colors.onSecondary : Colors.onSurfaceVariant}
+                  color={isActive ? colors.onSecondary : colors.onSurfaceVariant}
                 />
               ) : null}
               <Text style={[styles.chipText, isActive && styles.chipTextActive]}>
@@ -420,7 +447,7 @@ export default function NearbyListScreen({ onSwitchToMap, favoriteIds, onToggleF
             <MaterialIcons
               name="schedule"
               size={16}
-              color={is24hrOnly ? Colors.onSecondary : Colors.onSurfaceVariant}
+              color={is24hrOnly ? colors.onSecondary : colors.onSurfaceVariant}
             />
             <Text style={[styles.chipText, is24hrOnly && styles.chipTextActive]}>24hr</Text>
           </TouchableOpacity>
@@ -436,7 +463,7 @@ export default function NearbyListScreen({ onSwitchToMap, favoriteIds, onToggleF
             <MaterialIcons
               name="egg"
               size={16}
-              color={exoticOnly ? Colors.onSecondary : Colors.onSurfaceVariant}
+              color={exoticOnly ? colors.onSecondary : colors.onSurfaceVariant}
             />
             <Text style={[styles.chipText, exoticOnly && styles.chipTextActive]}>特殊寵物友善</Text>
           </TouchableOpacity>
@@ -464,7 +491,7 @@ export default function NearbyListScreen({ onSwitchToMap, favoriteIds, onToggleF
       {/* 列表 */}
       {loading ? (
         <View style={styles.loadingWrap}>
-          <ActivityIndicator size="large" color={Colors.primary} />
+          <ActivityIndicator size="large" color={colors.primary} />
           <Text style={styles.loadingText}>
             {activeFilter === 'favorites' ? '載入收藏清單...' : '載入附近地點...'}
           </Text>
@@ -484,8 +511,8 @@ export default function NearbyListScreen({ onSwitchToMap, favoriteIds, onToggleF
           ListFooterComponent={
             refreshing ? (
               <View style={{ alignItems: 'center', paddingVertical: 12 }}>
-                <ActivityIndicator size="small" color={Colors.primary} />
-                <Text style={{ fontFamily: FontFamily.bodyMedium, fontSize: FontSize.labelSM, color: Colors.onSurfaceVariant, marginTop: 4 }}>
+                <ActivityIndicator size="small" color={colors.primary} />
+                <Text style={{ fontFamily: FontFamily.bodyMedium, fontSize: FontSize.labelSM, color: colors.onSurfaceVariant, marginTop: 4 }}>
                   更新中...
                 </Text>
               </View>
@@ -497,7 +524,7 @@ export default function NearbyListScreen({ onSwitchToMap, favoriteIds, onToggleF
               <MaterialIcons
                 name={activeFilter === 'favorites' ? 'favorite-border' : 'search-off'}
                 size={48}
-                color={Colors.outline}
+                color={colors.outline}
               />
               <Text style={styles.emptyText}>
                 {activeFilter === 'favorites' ? '尚未收藏任何地點' : '找不到符合的地點'}
@@ -515,26 +542,26 @@ export default function NearbyListScreen({ onSwitchToMap, favoriteIds, onToggleF
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background },
+const makeStyles = (c: ThemeColors) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: c.background },
 
   searchBar: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
     marginHorizontal: 16, marginTop: 12, marginBottom: 4,
-    backgroundColor: Colors.surfaceContainerHigh,
+    backgroundColor: c.surfaceContainerHigh,
     borderRadius: 28, paddingHorizontal: 14, paddingVertical: 10,
   },
   mapToggleBtn: {
     width: 32, height: 32, borderRadius: 16,
-    backgroundColor: Colors.primaryFixed,
+    backgroundColor: c.primaryFixed,
     alignItems: 'center', justifyContent: 'center',
   },
   careGuideBtn: {
-    backgroundColor: '#006000',
+    backgroundColor: c.careGuide,
   },
   searchInput: {
     flex: 1, fontFamily: FontFamily.bodyMedium, fontSize: FontSize.bodyMD,
-    color: Colors.onSurface, padding: 0,
+    color: c.onSurface, padding: 0,
   },
 
   filterScroll: { flexGrow: 0, flexShrink: 0, marginTop: 12 },
@@ -542,35 +569,35 @@ const styles = StyleSheet.create({
   chip: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
     borderRadius: 20, paddingHorizontal: 16, paddingVertical: 9,
-    backgroundColor: Colors.surfaceContainerLowest,
-    borderWidth: 1.5, borderColor: Colors.outline,
+    backgroundColor: c.surfaceContainerLowest,
+    borderWidth: 1.5, borderColor: c.outline,
   },
-  chipActive: { backgroundColor: Colors.secondary, borderColor: Colors.secondary },
-  chipText: { fontFamily: FontFamily.headlineMedium, fontSize: FontSize.labelMD, color: Colors.onSurfaceVariant },
-  chipTextActive: { color: Colors.onSecondary, fontFamily: FontFamily.headlineBold },
+  chipActive: { backgroundColor: c.secondary, borderColor: c.secondary },
+  chipText: { fontFamily: FontFamily.headlineMedium, fontSize: FontSize.labelMD, color: c.onSurfaceVariant },
+  chipTextActive: { color: c.onSecondary, fontFamily: FontFamily.headlineBold },
 
   noticeBanner: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
     marginHorizontal: 16, marginTop: 10,
-    backgroundColor: '#FFF8E1',
+    backgroundColor: c.warningContainer,
     borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8,
-    borderLeftWidth: 3, borderLeftColor: '#F9A825',
+    borderLeftWidth: 3, borderLeftColor: c.warning,
   },
   noticeText: {
     flex: 1, fontFamily: FontFamily.bodyMedium, fontSize: FontSize.labelSM,
-    color: '#7A5800',
+    color: c.onWarningContainer,
   },
 
   resultCount: {
     fontFamily: FontFamily.bodyMedium, fontSize: FontSize.labelSM,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
     marginHorizontal: 16, marginTop: 10, marginBottom: 4,
   },
 
   row: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
     paddingHorizontal: 16, paddingVertical: 12,
-    backgroundColor: Colors.surfaceContainerLowest,
+    backgroundColor: c.surfaceContainerLowest,
   },
   iconWrap: {
     width: 52, height: 52, borderRadius: 12,
@@ -582,40 +609,55 @@ const styles = StyleSheet.create({
   rowTop: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   name: {
     flex: 1, fontFamily: FontFamily.headlineBold,
-    fontSize: FontSize.bodyMD, color: Colors.onSurface,
+    fontSize: FontSize.bodyMD, color: c.onSurface,
   },
   distBadge: {
-    backgroundColor: Colors.surfaceContainerHigh,
+    backgroundColor: c.surfaceContainerHigh,
     borderRadius: 10, paddingHorizontal: 8, paddingVertical: 2,
   },
-  distText: { fontFamily: FontFamily.bodyMedium, fontSize: 11, color: Colors.onSurfaceVariant },
+  distText: { fontFamily: FontFamily.bodyMedium, fontSize: 11, color: c.onSurfaceVariant },
 
   tagRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  partnerIcon: { marginRight: 4 },
+  partnerTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: c.primary,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+  },
+  partnerTagText: {
+    fontFamily: FontFamily.headlineMedium,
+    fontSize: FontSize.labelSM - 1,
+    color: c.onPrimary,
+  },
   catTag: { borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 },
   catTagText: { fontFamily: FontFamily.bodyMedium, fontSize: 11 },
   ratingRow: { flexDirection: 'row', alignItems: 'center', gap: 2 },
-  ratingText: { fontFamily: FontFamily.bodyMedium, fontSize: 11, color: Colors.onSurfaceVariant },
+  ratingText: { fontFamily: FontFamily.bodyMedium, fontSize: 11, color: c.onSurfaceVariant },
 
   address: {
     fontFamily: FontFamily.bodyMedium, fontSize: FontSize.labelSM,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
   },
 
   metaRow: { flexDirection: 'row', gap: 12, flexWrap: 'wrap' },
   metaItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  metaText: { fontFamily: FontFamily.bodyMedium, fontSize: 11, color: Colors.onSurfaceVariant },
+  metaText: { fontFamily: FontFamily.bodyMedium, fontSize: 11, color: c.onSurfaceVariant },
 
   rowRight: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   heartBtn: {
     width: 32, height: 32, alignItems: 'center', justifyContent: 'center',
   },
 
-  separator: { height: 1, backgroundColor: Colors.surfaceVariant, marginLeft: 80 },
+  separator: { height: 1, backgroundColor: c.surfaceVariant, marginLeft: 80 },
 
   loadingWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
-  loadingText: { fontFamily: FontFamily.bodyMedium, fontSize: FontSize.bodyMD, color: Colors.onSurfaceVariant },
+  loadingText: { fontFamily: FontFamily.bodyMedium, fontSize: FontSize.bodyMD, color: c.onSurfaceVariant },
 
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 80, gap: 8 },
-  emptyText: { fontFamily: FontFamily.bodyMedium, fontSize: FontSize.bodyMD, color: Colors.outline },
-  emptyHint: { fontFamily: FontFamily.bodyMedium, fontSize: FontSize.labelSM, color: Colors.outlineVariant },
+  emptyText: { fontFamily: FontFamily.bodyMedium, fontSize: FontSize.bodyMD, color: c.outline },
+  emptyHint: { fontFamily: FontFamily.bodyMedium, fontSize: FontSize.labelSM, color: c.outlineVariant },
 });

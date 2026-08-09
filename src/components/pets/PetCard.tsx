@@ -4,7 +4,8 @@ import { MaterialIcons } from '@expo/vector-icons';
 import Card from '../ui/Card';
 import Badge from '../ui/Badge';
 import Chip from '../ui/Chip';
-import { Colors } from '../../constants/colors';
+import { ThemeColors } from '../../constants/themes';
+import { useTheme, useThemedStyles } from '../../context/ThemeContext';
 import { FontFamily, FontSize } from '../../constants/typography';
 import { Pet } from '../../types';
 
@@ -22,6 +23,8 @@ const LOCAL_PET_PHOTOS: Record<string, any> = {
 };
 
 export default function PetCard({ pet, color, onPress, onMenuPress }: Props) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   return (
     <TouchableOpacity onPress={onPress} activeOpacity={0.92}>
       <Card style={styles.card}>
@@ -33,7 +36,7 @@ export default function PetCard({ pet, color, onPress, onMenuPress }: Props) {
             <Image source={{ uri: pet.photoUrl }} style={styles.image} />
           ) : (
             <View style={[styles.image, styles.imagePlaceholder]}>
-              <MaterialIcons name="pets" size={48} color={Colors.outlineVariant} />
+              <MaterialIcons name="pets" size={48} color={colors.outlineVariant} />
             </View>
           )}
           <View style={styles.badgeOverlay}>
@@ -45,10 +48,10 @@ export default function PetCard({ pet, color, onPress, onMenuPress }: Props) {
         <View style={styles.row}>
           <View>
             <Text style={styles.name}>{pet.name}</Text>
-            <Text style={styles.sub}>{pet.age} years • {pet.breed}</Text>
+            <Text style={styles.sub}>{pet.age} 歲 • {pet.breed}</Text>
           </View>
           <TouchableOpacity onPress={onMenuPress} style={styles.menuBtn}>
-            <MaterialIcons name="more-vert" size={20} color={Colors.outline} />
+            <MaterialIcons name="more-vert" size={20} color={colors.outline} />
           </TouchableOpacity>
         </View>
 
@@ -70,17 +73,21 @@ export default function PetCard({ pet, color, onPress, onMenuPress }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (c: ThemeColors) => StyleSheet.create({
   card: { padding: 0, overflow: 'hidden' },
   imageContainer: { position: 'relative', marginBottom: 0 },
   image: {
     width: '100%',
-    height: 180,
+    // 寬幅是這張卡的設計重點，不要改成 4:3 那種通用相片比例。
+    // 但用比例而非原本的固定 height:180 —— 固定高度會讓實際比例隨機型跑，
+    // 小螢幕 1.86:1、Pro Max 2.22:1。16:9 讓所有機型一致，
+    // 順便把 cover 切掉的部分從 55% 降到 44%。
+    aspectRatio: 16 / 9,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
   },
   imagePlaceholder: {
-    backgroundColor: Colors.surfaceContainer,
+    backgroundColor: c.surfaceContainer,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -100,12 +107,12 @@ const styles = StyleSheet.create({
   name: {
     fontFamily: FontFamily.headlineSemiBold,
     fontSize: FontSize.headlineMD,
-    color: Colors.onSurface,
+    color: c.onSurface,
   },
   sub: {
     fontFamily: FontFamily.bodyMedium,
     fontSize: FontSize.bodyMD,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
     marginTop: 2,
   },
   menuBtn: { padding: 4 },
@@ -123,7 +130,7 @@ const styles = StyleSheet.create({
   nextEvent: {
     fontFamily: FontFamily.headlineMedium,
     fontSize: FontSize.labelSM,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
     paddingHorizontal: 16,
     paddingTop: 6,
     paddingBottom: 16,

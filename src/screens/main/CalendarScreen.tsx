@@ -13,13 +13,14 @@ import AppBar from '../../components/layout/AppBar';
 import { useUser } from '../../context/UserContext';
 import { useNotifications } from '../../context/NotificationContext';
 import Card from '../../components/ui/Card';
-import { Colors } from '../../constants/colors';
+import { ThemeColors } from '../../constants/themes';
+import { useTheme, useThemedStyles } from '../../context/ThemeContext';
 import { FontFamily, FontSize } from '../../constants/typography';
 import { getEvents, markEventDone, addEvent, deleteEvent, getPets } from '../../api';
 import { CalendarEvent, Pet } from '../../types';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../types/navigation';
-import { buildPetColorMap, ALL_PETS_COLOR } from '../../constants/petColors';
+import { buildPetColorMap, allPetsColor } from '../../constants/petColors';
 import AddEventModal from './AddEventModal';
 
 type Props = {
@@ -29,16 +30,15 @@ type Props = {
 const DAY_LABELS = ['日', '一', '二', '三', '四', '五', '六'];
 const MONTH_NAMES = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
 
-const CATEGORY_CONFIG: Record<
-  string,
-  { icon: keyof typeof MaterialIcons.glyphMap; color: string; bg: string }
-> = {
-  vet:        { icon: 'local-hospital',   color: Colors.error,            bg: Colors.errorContainer },
-  medication: { icon: 'medical-services', color: Colors.secondary,        bg: Colors.secondaryContainer },
-  grooming:   { icon: 'content-cut',      color: Colors.primaryContainer, bg: Colors.primaryFixed },
-  activity:   { icon: 'directions-run',   color: Colors.onSurface,        bg: Colors.surfaceContainerHigh },
-  other:      { icon: 'event-note',       color: Colors.onSurface,        bg: Colors.surfaceContainerHigh },
-};
+const makeCategoryConfig = (
+  c: ThemeColors,
+): Record<string, { icon: keyof typeof MaterialIcons.glyphMap; color: string; bg: string }> => ({
+  vet:        { icon: 'local-hospital',   color: c.error,            bg: c.errorContainer },
+  medication: { icon: 'medical-services', color: c.secondary,        bg: c.secondaryContainer },
+  grooming:   { icon: 'content-cut',      color: c.primaryContainer, bg: c.primaryFixed },
+  activity:   { icon: 'directions-run',   color: c.onSurface,        bg: c.surfaceContainerHigh },
+  other:      { icon: 'event-note',       color: c.onSurface,        bg: c.surfaceContainerHigh },
+});
 
 function buildCalendarDays(year: number, month: number) {
   const firstDay = new Date(year, month, 1).getDay();
@@ -101,7 +101,10 @@ function EventRow({
   showActions?: boolean;
   isOverdue?: boolean;
 }) {
-  const cfg = CATEGORY_CONFIG[event.category] ?? CATEGORY_CONFIG.activity;
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
+  const categoryConfig = makeCategoryConfig(colors);
+  const cfg = categoryConfig[event.category] ?? categoryConfig.activity;
   const [, em, ed] = event.date.split('-').map(Number);
   const showDate = event.date !== todayStr;
 
@@ -130,7 +133,7 @@ function EventRow({
             </View>
             {event.repeat !== 'none' && (
               <View style={styles.repeatBadge}>
-                <MaterialIcons name="repeat" size={10} color={Colors.outline} />
+                <MaterialIcons name="repeat" size={10} color={colors.outline} />
                 <Text style={styles.repeatBadgeLabel}>
                   {event.repeat === 'daily' ? '每天' : event.repeat === 'weekly' ? '每週' : '每月'}
                 </Text>
@@ -141,7 +144,7 @@ function EventRow({
         {showActions && (
           <>
             <TouchableOpacity style={styles.deleteBtn} onPress={() => onDelete(event)}>
-              <MaterialIcons name="delete-outline" size={20} color={Colors.outlineVariant} />
+              <MaterialIcons name="delete-outline" size={20} color={colors.outlineVariant} />
             </TouchableOpacity>
             {isOverdue ? (
               <View style={styles.overdueBadge}>
@@ -153,8 +156,8 @@ function EventRow({
                 onPress={() => onToggle(event.id)}
               >
                 {event.done
-                  ? <MaterialIcons name="check" size={16} color={Colors.onPrimary} />
-                  : <MaterialIcons name="radio-button-unchecked" size={22} color={Colors.outlineVariant} />
+                  ? <MaterialIcons name="check" size={16} color={colors.onPrimary} />
+                  : <MaterialIcons name="radio-button-unchecked" size={22} color={colors.outlineVariant} />
                 }
               </TouchableOpacity>
             )}
@@ -168,6 +171,8 @@ function EventRow({
 // ─── CalendarScreen ───────────────────────────────────────────────────────────
 
 export default function CalendarScreen({ navigation }: Props) {
+  const { colors, theme } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const insets = useSafeAreaInsets();
   const { user } = useUser();
   const { unreadCount } = useNotifications();
@@ -204,7 +209,7 @@ export default function CalendarScreen({ navigation }: Props) {
     [year, month, selectedDay]
   );
 
-  const petColorMap = useMemo(() => buildPetColorMap(pets.map((p) => p.id)), [pets]);
+  const petColorMap = useMemo(() => buildPetColorMap(pets, theme.key), [pets, theme.key]);
 
   const weekStrip = useMemo(() => buildWeekStrip(year, month, selectedDay), [year, month, selectedDay]);
 
@@ -214,9 +219,9 @@ export default function CalendarScreen({ navigation }: Props) {
   }, [viewMode, year, month, selectedDay, weekStrip]);
 
   const getPetInfo = (petId: string) => {
-    if (petId === 'all') return { name: '全部', color: ALL_PETS_COLOR };
+    if (petId === 'all') return { name: '全部', color: allPetsColor(colors) };
     const pet = pets.find((p) => p.id === petId);
-    return { name: pet?.name ?? '?', color: petColorMap[petId] ?? Colors.primary };
+    return { name: pet?.name ?? '?', color: petColorMap[petId] ?? colors.primary };
   };
 
   const eventsByDate = useMemo(() => {
@@ -304,6 +309,9 @@ export default function CalendarScreen({ navigation }: Props) {
     <View style={[styles.container, { paddingBottom: insets.bottom }]}>
       <AppBar
         avatarUrl={user.avatarUrl}
+        userName={user.name}
+        userId={user.id}
+        userColor={user.avatarColor}
         onAvatarPress={() => navigation.navigate('Profile')}
         onNotificationPress={() => navigation.navigate('Notifications')}
         unreadCount={unreadCount}
@@ -331,13 +339,13 @@ export default function CalendarScreen({ navigation }: Props) {
                 ))}
               </View>
               <TouchableOpacity style={[styles.calNavBtn, styles.calAddBtn]} onPress={() => setShowAddModal(true)}>
-                <MaterialIcons name="add" size={20} color={Colors.primary} />
+                <MaterialIcons name="add" size={20} color={colors.primary} />
               </TouchableOpacity>
               <TouchableOpacity style={styles.calNavBtn} onPress={prevPeriod}>
-                <MaterialIcons name="chevron-left" size={22} color={Colors.onSurface} />
+                <MaterialIcons name="chevron-left" size={22} color={colors.onSurface} />
               </TouchableOpacity>
               <TouchableOpacity style={styles.calNavBtn} onPress={nextPeriod}>
-                <MaterialIcons name="chevron-right" size={22} color={Colors.onSurface} />
+                <MaterialIcons name="chevron-right" size={22} color={colors.onSurface} />
               </TouchableOpacity>
             </View>
           </View>
@@ -447,7 +455,7 @@ export default function CalendarScreen({ navigation }: Props) {
               </View>
             ))}
             <View style={styles.legendItem}>
-              <View style={[styles.legendDot, { backgroundColor: ALL_PETS_COLOR }]} />
+              <View style={[styles.legendDot, { backgroundColor: allPetsColor(colors) }]} />
               <Text style={styles.legendLabel}>全部</Text>
             </View>
           </View>
@@ -478,7 +486,7 @@ export default function CalendarScreen({ navigation }: Props) {
           </View>
         ) : (
           <View style={styles.emptyToday}>
-            <MaterialIcons name="pets" size={16} color={Colors.outline} />
+            <MaterialIcons name="pets" size={16} color={colors.outline} />
             <Text style={styles.emptyTodayText}>不要忘記重要的日子，為你的寵物安排今日行程吧！</Text>
           </View>
         )}
@@ -537,7 +545,7 @@ export default function CalendarScreen({ navigation }: Props) {
 
         {/* ── Add event button ────────────────────────────────── */}
         <TouchableOpacity style={styles.addEventBtn} onPress={() => setShowAddModal(true)}>
-          <MaterialIcons name="add-circle" size={22} color={Colors.onPrimary} />
+          <MaterialIcons name="add-circle" size={22} color={colors.onPrimary} />
           <Text style={styles.addEventLabel}>新增提醒</Text>
         </TouchableOpacity>
       </ScrollView>
@@ -548,7 +556,7 @@ export default function CalendarScreen({ navigation }: Props) {
         selectedDate={selectedDateStr}
         pets={pets}
         petColorMap={petColorMap}
-        allPetsColor={ALL_PETS_COLOR}
+        allPetsColor={allPetsColor(colors)}
         onClose={() => setShowAddModal(false)}
         onSave={handleAddEvents}
       />
@@ -569,19 +577,19 @@ export default function CalendarScreen({ navigation }: Props) {
               <>
                 <Text style={styles.deleteSubtitle}>這是重複事項，要刪除哪些？</Text>
                 <TouchableOpacity style={styles.deleteOption} onPress={() => confirmDelete('this')}>
-                  <MaterialIcons name="event-busy" size={20} color={Colors.error} />
-                  <Text style={[styles.deleteOptionText, { color: Colors.error }]}>僅刪除此次</Text>
+                  <MaterialIcons name="event-busy" size={20} color={colors.error} />
+                  <Text style={[styles.deleteOptionText, { color: colors.error }]}>僅刪除此次</Text>
                 </TouchableOpacity>
                 <View style={styles.deleteOptionDivider} />
                 <TouchableOpacity style={styles.deleteOption} onPress={() => confirmDelete('all')}>
-                  <MaterialIcons name="delete-forever" size={20} color={Colors.error} />
-                  <Text style={[styles.deleteOptionText, { color: Colors.error }]}>刪除全部重複事項</Text>
+                  <MaterialIcons name="delete-forever" size={20} color={colors.error} />
+                  <Text style={[styles.deleteOptionText, { color: colors.error }]}>刪除全部重複事項</Text>
                 </TouchableOpacity>
               </>
             ) : (
               <TouchableOpacity style={styles.deleteOption} onPress={() => confirmDelete('this')}>
-                <MaterialIcons name="delete-outline" size={20} color={Colors.error} />
-                <Text style={[styles.deleteOptionText, { color: Colors.error }]}>確認刪除</Text>
+                <MaterialIcons name="delete-outline" size={20} color={colors.error} />
+                <Text style={[styles.deleteOptionText, { color: colors.error }]}>確認刪除</Text>
               </TouchableOpacity>
             )}
 
@@ -598,8 +606,8 @@ export default function CalendarScreen({ navigation }: Props) {
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background },
+const makeStyles = (c: ThemeColors) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: c.background },
   content: { paddingHorizontal: 20, paddingBottom: 32, gap: 16 },
 
   // Calendar card
@@ -608,12 +616,12 @@ const styles = StyleSheet.create({
   calMonthLabel: {
     fontFamily: FontFamily.headlineSemiBold,
     fontSize: FontSize.headlineMD,
-    color: Colors.onSurface,
+    color: c.onSurface,
   },
   calNav: { flexDirection: 'row', gap: 4, alignItems: 'center' },
   viewToggle: {
     flexDirection: 'row',
-    backgroundColor: Colors.surfaceContainerHigh,
+    backgroundColor: c.surfaceContainerHigh,
     borderRadius: 10,
     padding: 2,
   },
@@ -623,7 +631,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   viewToggleBtnActive: {
-    backgroundColor: Colors.surface,
+    backgroundColor: c.surface,
     shadowColor: '#000',
     shadowOpacity: 0.08,
     shadowRadius: 4,
@@ -633,10 +641,10 @@ const styles = StyleSheet.create({
   viewToggleLabel: {
     fontFamily: FontFamily.headlineMedium,
     fontSize: FontSize.labelSM,
-    color: Colors.outline,
+    color: c.outline,
   },
   viewToggleLabelActive: {
-    color: Colors.onSurface,
+    color: c.onSurface,
     fontFamily: FontFamily.headlineSemiBold,
   },
   calNavBtn: {
@@ -645,10 +653,10 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: Colors.surfaceContainerHigh,
+    backgroundColor: c.surfaceContainerHigh,
   },
   calAddBtn: {
-    backgroundColor: Colors.primaryFixed,
+    backgroundColor: c.primaryFixed,
   },
   dayLabels: { flexDirection: 'row' },
   dayLabel: {
@@ -656,7 +664,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     fontFamily: FontFamily.headlineBold,
     fontSize: FontSize.labelSM,
-    color: Colors.outline,
+    color: c.outline,
     paddingVertical: 4,
   },
   dayGrid: { flexDirection: 'row', flexWrap: 'wrap' },
@@ -675,15 +683,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  dayCellSelected: { backgroundColor: Colors.primary },
-  dayCellToday: { backgroundColor: Colors.primaryFixed },
+  dayCellSelected: { backgroundColor: c.primary },
+  dayCellToday: { backgroundColor: c.primaryFixed },
   dayNum: {
     fontFamily: FontFamily.headlineMedium,
     fontSize: FontSize.labelMD,
-    color: Colors.onSurface,
+    color: c.onSurface,
   },
-  dayNumFaded: { color: Colors.outlineVariant },
-  dayNumSelected: { color: Colors.onPrimary, fontFamily: FontFamily.headlineBold },
+  dayNumFaded: { color: c.outlineVariant },
+  dayNumSelected: { color: c.onPrimary, fontFamily: FontFamily.headlineBold },
   barStack: {
     width: '72%',
     gap: 2,
@@ -698,7 +706,7 @@ const styles = StyleSheet.create({
   legendLabel: {
     fontFamily: FontFamily.headlineMedium,
     fontSize: FontSize.labelSM,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
   },
 
   // Empty today state
@@ -713,7 +721,7 @@ const styles = StyleSheet.create({
     flex: 1,
     fontFamily: FontFamily.bodyMedium,
     fontSize: FontSize.labelMD,
-    color: Colors.outline,
+    color: c.outline,
     lineHeight: 20,
   },
 
@@ -723,10 +731,10 @@ const styles = StyleSheet.create({
   progressLabel: {
     fontFamily: FontFamily.headlineMedium,
     fontSize: FontSize.labelMD,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
   },
   overdueChip: {
-    backgroundColor: Colors.errorContainer,
+    backgroundColor: c.errorContainer,
     borderRadius: 6,
     paddingHorizontal: 6,
     paddingVertical: 2,
@@ -734,24 +742,24 @@ const styles = StyleSheet.create({
   overdueChipLabel: {
     fontFamily: FontFamily.headlineSemiBold,
     fontSize: FontSize.labelSM,
-    color: Colors.error,
+    color: c.error,
   },
   progressTrack: {
     height: 6,
     flexDirection: 'row',
-    backgroundColor: Colors.surfaceContainerHigh,
+    backgroundColor: c.surfaceContainerHigh,
     borderRadius: 9999,
     overflow: 'hidden',
   },
-  progressFill: { height: '100%', backgroundColor: Colors.primary },
-  progressOverdue: { height: '100%', backgroundColor: Colors.error },
+  progressFill: { height: '100%', backgroundColor: c.primary },
+  progressOverdue: { height: '100%', backgroundColor: c.error },
 
   // Event sections
   section: { gap: 8 },
   sectionLabel: {
     fontFamily: FontFamily.headlineSemiBold,
     fontSize: FontSize.labelMD,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
     textTransform: 'uppercase',
     letterSpacing: 1,
   },
@@ -780,13 +788,13 @@ const styles = StyleSheet.create({
   eventTitle: {
     fontFamily: FontFamily.headlineSemiBold,
     fontSize: FontSize.bodyMD,
-    color: Colors.onSurface,
+    color: c.onSurface,
   },
   eventTitleDone: { textDecorationLine: 'line-through' },
   eventDesc: {
     fontFamily: FontFamily.bodyMedium,
     fontSize: FontSize.labelMD,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
   },
   eventMetaRow: {
     flexDirection: 'row',
@@ -798,12 +806,12 @@ const styles = StyleSheet.create({
   eventDateLabel: {
     fontFamily: FontFamily.headlineMedium,
     fontSize: FontSize.labelSM,
-    color: Colors.outline,
+    color: c.outline,
   },
   eventTime: {
     fontFamily: FontFamily.headlineMedium,
     fontSize: FontSize.labelSM,
-    color: Colors.outline,
+    color: c.outline,
   },
   petBadge: {
     flexDirection: 'row',
@@ -822,10 +830,10 @@ const styles = StyleSheet.create({
   repeatBadgeLabel: {
     fontFamily: FontFamily.bodyMedium,
     fontSize: FontSize.labelSM,
-    color: Colors.outline,
+    color: c.outline,
   },
   overdueBadge: {
-    backgroundColor: Colors.errorContainer,
+    backgroundColor: c.errorContainer,
     borderRadius: 6,
     paddingHorizontal: 8,
     paddingVertical: 4,
@@ -833,7 +841,7 @@ const styles = StyleSheet.create({
   overdueBadgeLabel: {
     fontFamily: FontFamily.headlineSemiBold,
     fontSize: FontSize.labelSM,
-    color: Colors.error,
+    color: c.error,
   },
   deleteBtn: { padding: 4 },
   checkBtn: { padding: 4 },
@@ -841,11 +849,11 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: Colors.primary,
+    backgroundColor: c.primary,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  divider: { height: 1, backgroundColor: Colors.surfaceVariant, marginHorizontal: 14 },
+  divider: { height: 1, backgroundColor: c.surfaceVariant, marginHorizontal: 14 },
 
   // Add button
   addEventBtn: {
@@ -853,14 +861,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    backgroundColor: Colors.primary,
+    backgroundColor: c.primary,
     borderRadius: 9999,
     paddingVertical: 15,
   },
   addEventLabel: {
     fontFamily: FontFamily.headlineSemiBold,
     fontSize: FontSize.bodyMD,
-    color: Colors.onPrimary,
+    color: c.onPrimary,
   },
 
   // Delete modal
@@ -872,7 +880,7 @@ const styles = StyleSheet.create({
     padding: 24,
   },
   deleteCard: {
-    backgroundColor: Colors.surface,
+    backgroundColor: c.surface,
     borderRadius: 20,
     padding: 20,
     width: '100%',
@@ -880,19 +888,19 @@ const styles = StyleSheet.create({
   deleteTitle: {
     fontFamily: FontFamily.headlineSemiBold,
     fontSize: FontSize.bodyLG,
-    color: Colors.onSurface,
+    color: c.onSurface,
     marginBottom: 4,
   },
   deleteEventName: {
     fontFamily: FontFamily.headlineMedium,
     fontSize: FontSize.bodyMD,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
     marginBottom: 16,
   },
   deleteSubtitle: {
     fontFamily: FontFamily.bodyMedium,
     fontSize: FontSize.labelMD,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
     marginBottom: 12,
   },
   deleteOption: {
@@ -905,11 +913,11 @@ const styles = StyleSheet.create({
     fontFamily: FontFamily.headlineSemiBold,
     fontSize: FontSize.bodyMD,
   },
-  deleteOptionDivider: { height: 1, backgroundColor: Colors.surfaceVariant },
+  deleteOptionDivider: { height: 1, backgroundColor: c.surfaceVariant },
   deleteCancelBtn: { paddingVertical: 14, alignItems: 'center' },
   deleteCancelLabel: {
     fontFamily: FontFamily.headlineMedium,
     fontSize: FontSize.bodyMD,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
   },
 });

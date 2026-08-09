@@ -22,6 +22,7 @@ function mapUser(u: any): User {
     name: u.profile?.name || u.name || '',
     email: u.email,
     avatarUrl: u.profile?.avatarUrl ?? u.avatarUrl ?? undefined,
+    avatarColor: u.profile?.avatarColor ?? u.avatarColor ?? undefined,
     lastNameChangedAt: u.lastNameChangedAt ?? undefined,
     defaultPostVisibility: u.defaultPostVisibility ?? 'public',
     notifSettings: {

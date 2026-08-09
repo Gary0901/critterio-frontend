@@ -4,7 +4,8 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useState } from 'react';
 import { RootStackParamList } from '../../types/navigation';
-import { Colors } from '../../constants/colors';
+import { ThemeColors } from '../../constants/themes';
+import { useTheme, useThemedStyles } from '../../context/ThemeContext';
 import { FontFamily, FontSize } from '../../constants/typography';
 import { useAuth } from '../../context/AuthContext';
 import { updateProfile, deleteAccount as apiDeleteAccount } from '../../api';
@@ -13,15 +14,9 @@ type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'PrivacySecurity'>;
 };
 
-function ComingSoonBadge() {
-  return (
-    <View style={styles.comingSoonBadge}>
-      <Text style={styles.comingSoonText}>即將推出</Text>
-    </View>
-  );
-}
-
 export default function PrivacySecurityScreen({ navigation }: Props) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const insets = useSafeAreaInsets();
   const { user, updateUser, logout } = useAuth();
   const [postVisibility, setPostVisibility] = useState<'public' | 'private'>(
@@ -86,42 +81,20 @@ export default function PrivacySecurityScreen({ navigation }: Props) {
     <View style={[styles.container, { paddingBottom: insets.bottom }]}>
       <View style={[styles.appBar, { paddingTop: insets.top + 8 }]}>
         <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
-          <MaterialIcons name="arrow-back" size={24} color={Colors.onSurface} />
+          <MaterialIcons name="arrow-back" size={24} color={colors.onSurface} />
         </TouchableOpacity>
         <Text style={styles.appBarTitle}>隱私與安全</Text>
         <View style={{ width: 40 }} />
       </View>
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        {/* 帳號安全 */}
-        <View>
-          <Text style={styles.sectionTitle}>帳號安全</Text>
-          <View style={styles.card}>
-            <View style={[styles.row, { opacity: 0.5 }]}>
-              <View style={styles.rowIcon}>
-                <MaterialIcons name="lock-outline" size={20} color={Colors.primary} />
-              </View>
-              <Text style={styles.rowLabel}>更改密碼</Text>
-              <ComingSoonBadge />
-            </View>
-            <View style={styles.divider} />
-            <View style={[styles.row, { opacity: 0.5 }]}>
-              <View style={styles.rowIcon}>
-                <MaterialIcons name="security" size={20} color={Colors.primary} />
-              </View>
-              <Text style={styles.rowLabel}>兩步驟驗證</Text>
-              <ComingSoonBadge />
-            </View>
-          </View>
-        </View>
-
         {/* 隱私設定 */}
         <View>
           <Text style={styles.sectionTitle}>隱私設定</Text>
           <View style={styles.card}>
             <TouchableOpacity style={styles.row} onPress={handleVisibilityPress} activeOpacity={0.75}>
               <View style={styles.rowIcon}>
-                <MaterialIcons name={postVisibility === 'public' ? 'public' : 'lock'} size={20} color={Colors.primary} />
+                <MaterialIcons name={postVisibility === 'public' ? 'public' : 'lock'} size={20} color={colors.primary} />
               </View>
               <View style={styles.rowText}>
                 <Text style={styles.rowLabel}>貼文預設可見度</Text>
@@ -130,7 +103,22 @@ export default function PrivacySecurityScreen({ navigation }: Props) {
               <View style={styles.valueChip}>
                 <Text style={styles.valueChipText}>{postVisibility === 'public' ? '公開' : '限自己'}</Text>
               </View>
-              <MaterialIcons name="chevron-right" size={20} color={Colors.onSurfaceVariant} />
+              <MaterialIcons name="chevron-right" size={20} color={colors.onSurfaceVariant} />
+            </TouchableOpacity>
+            <View style={styles.divider} />
+            <TouchableOpacity
+              style={styles.row}
+              onPress={() => navigation.navigate('BlockedUsers')}
+              activeOpacity={0.75}
+            >
+              <View style={styles.rowIcon}>
+                <MaterialIcons name="block" size={20} color={colors.primary} />
+              </View>
+              <View style={styles.rowText}>
+                <Text style={styles.rowLabel}>已封鎖的使用者</Text>
+                <Text style={styles.rowDesc}>管理你封鎖的對象</Text>
+              </View>
+              <MaterialIcons name="chevron-right" size={20} color={colors.onSurfaceVariant} />
             </TouchableOpacity>
           </View>
         </View>
@@ -139,27 +127,19 @@ export default function PrivacySecurityScreen({ navigation }: Props) {
         <View>
           <Text style={styles.sectionTitle}>資料與帳號</Text>
           <View style={styles.card}>
-            <View style={[styles.row, { opacity: 0.5 }]}>
-              <View style={styles.rowIcon}>
-                <MaterialIcons name="download" size={20} color={Colors.primary} />
-              </View>
-              <Text style={styles.rowLabel}>下載我的資料</Text>
-              <ComingSoonBadge />
-            </View>
-            <View style={styles.divider} />
             <TouchableOpacity
               style={[styles.row, deleting && { opacity: 0.5 }]}
               onPress={handleDeleteAccount}
               disabled={deleting}
               activeOpacity={0.75}
             >
-              <View style={[styles.rowIcon, { backgroundColor: Colors.errorContainer }]}>
-                <MaterialIcons name="delete-outline" size={20} color={Colors.error} />
+              <View style={[styles.rowIcon, { backgroundColor: colors.errorContainer }]}>
+                <MaterialIcons name="delete-outline" size={20} color={colors.error} />
               </View>
-              <Text style={[styles.rowLabel, { color: Colors.error }]}>
+              <Text style={[styles.rowLabel, { color: colors.error }]}>
                 {deleting ? '刪除中...' : '刪除帳號'}
               </Text>
-              <MaterialIcons name="chevron-right" size={20} color={Colors.error} />
+              <MaterialIcons name="chevron-right" size={20} color={colors.error} />
             </TouchableOpacity>
           </View>
         </View>
@@ -168,38 +148,38 @@ export default function PrivacySecurityScreen({ navigation }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background },
+const makeStyles = (c: ThemeColors) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: c.background },
   appBar: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingBottom: 8,
-    backgroundColor: Colors.background,
+    backgroundColor: c.background,
   },
   backBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   appBarTitle: {
     fontFamily: FontFamily.headlineSemiBold,
     fontSize: FontSize.bodyLG,
-    color: Colors.primary,
+    color: c.primary,
   },
   content: { padding: 20, gap: 16 },
 
   sectionTitle: {
     fontFamily: FontFamily.headlineMedium,
     fontSize: FontSize.labelSM,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
     textTransform: 'uppercase',
     letterSpacing: 0.8,
     marginBottom: 8,
     marginLeft: 4,
   },
   card: {
-    backgroundColor: Colors.surfaceContainerLowest,
+    backgroundColor: c.surfaceContainerLowest,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: Colors.surfaceVariant,
+    borderColor: c.surfaceVariant,
     overflow: 'hidden',
   },
   row: {
@@ -213,7 +193,7 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 12,
-    backgroundColor: Colors.primaryFixed,
+    backgroundColor: c.primaryFixed,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -222,29 +202,17 @@ const styles = StyleSheet.create({
     flex: 1,
     fontFamily: FontFamily.headlineMedium,
     fontSize: FontSize.bodyMD,
-    color: Colors.onSurface,
+    color: c.onSurface,
   },
   rowDesc: {
     fontFamily: FontFamily.bodyMedium,
     fontSize: FontSize.labelSM,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
   },
-  divider: { height: 1, backgroundColor: Colors.surfaceVariant, marginLeft: 64 },
-
-  comingSoonBadge: {
-    backgroundColor: Colors.surfaceContainerHigh,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-  },
-  comingSoonText: {
-    fontFamily: FontFamily.headlineMedium,
-    fontSize: FontSize.labelSM,
-    color: Colors.onSurfaceVariant,
-  },
+  divider: { height: 1, backgroundColor: c.surfaceVariant, marginLeft: 64 },
 
   valueChip: {
-    backgroundColor: Colors.primaryFixed,
+    backgroundColor: c.primaryFixed,
     paddingHorizontal: 12,
     paddingVertical: 5,
     borderRadius: 9999,
@@ -252,6 +220,6 @@ const styles = StyleSheet.create({
   valueChipText: {
     fontFamily: FontFamily.headlineSemiBold,
     fontSize: FontSize.labelSM,
-    color: Colors.onPrimaryContainer,
+    color: c.onPrimaryContainer,
   },
 });

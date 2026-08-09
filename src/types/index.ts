@@ -12,6 +12,8 @@ export interface Pet {
   heightCm: number;
   gender: Gender;
   photoUrl?: string;
+  /** 識別色索引（色條、行事曆標籤）。後端建立寵物時自動配一個未使用的值 */
+  color?: number;
   traits: string[];
   status: PetStatus;
   statusLabel: string;
@@ -34,6 +36,8 @@ export interface User {
   name: string;
   email: string;
   avatarUrl?: string;
+  /** 使用者自選的頭像底色索引。沒選過為 undefined，前端會依 id 雜湊自動配 */
+  avatarColor?: number;
   lastNameChangedAt?: string; // ISO date string, enforces 14-day cooldown
   defaultPostVisibility?: 'public' | 'private';
   notifSettings?: NotifSettings;
@@ -41,8 +45,10 @@ export interface User {
 
 export interface Post {
   id: string;
+  authorId?: string;
   author: string;
   authorAvatarUrl?: string;
+  authorAvatarColor?: number;
   content: string;
   imageUrl?: string;
   images?: string[];

@@ -8,7 +8,8 @@ import {
   TextInputProps,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
-import { Colors } from '../../constants/colors';
+import { ThemeColors } from '../../constants/themes';
+import { useTheme, useThemedStyles } from '../../context/ThemeContext';
 import { FontFamily, FontSize } from '../../constants/typography';
 
 interface Props extends TextInputProps {
@@ -18,6 +19,8 @@ interface Props extends TextInputProps {
 }
 
 export default function Input({ label, isPassword = false, error, style, ...rest }: Props) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const [visible, setVisible] = useState(false);
 
   return (
@@ -26,7 +29,7 @@ export default function Input({ label, isPassword = false, error, style, ...rest
       <View style={[styles.container, error ? styles.containerError : null]}>
         <TextInput
           style={[styles.input, style]}
-          placeholderTextColor={Colors.outlineVariant}
+          placeholderTextColor={colors.outlineVariant}
           secureTextEntry={isPassword && !visible}
           {...rest}
         />
@@ -35,7 +38,7 @@ export default function Input({ label, isPassword = false, error, style, ...rest
             <MaterialIcons
               name={visible ? 'visibility' : 'visibility-off'}
               size={20}
-              color={Colors.outline}
+              color={colors.outline}
             />
           </TouchableOpacity>
         )}
@@ -45,17 +48,17 @@ export default function Input({ label, isPassword = false, error, style, ...rest
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (c: ThemeColors) => StyleSheet.create({
   wrapper: { gap: 6 },
   label: {
     fontFamily: FontFamily.headlineMedium,
     fontSize: FontSize.labelMD,
-    color: Colors.onSurface,
+    color: c.onSurface,
   },
   container: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.surfaceContainerLow,
+    backgroundColor: c.surfaceContainerLow,
     borderRadius: 16,
     paddingHorizontal: 16,
     height: 56,
@@ -63,18 +66,18 @@ const styles = StyleSheet.create({
     borderColor: 'transparent',
   },
   containerError: {
-    borderColor: Colors.error,
+    borderColor: c.error,
   },
   input: {
     flex: 1,
     fontFamily: FontFamily.bodyMedium,
     fontSize: FontSize.bodyMD,
-    color: Colors.onSurface,
+    color: c.onSurface,
   },
   eyeBtn: { padding: 4 },
   error: {
     fontFamily: FontFamily.bodyMedium,
     fontSize: FontSize.labelSM,
-    color: Colors.error,
+    color: c.error,
   },
 });

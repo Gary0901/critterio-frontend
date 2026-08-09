@@ -16,7 +16,8 @@ import Constants from 'expo-constants';
 import { RootStackParamList } from '../../types/navigation';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
-import { Colors } from '../../constants/colors';
+import { ThemeColors } from '../../constants/themes';
+import { useTheme, useThemedStyles } from '../../context/ThemeContext';
 import { FontFamily, FontSize } from '../../constants/typography';
 import { useAuth } from '../../context/AuthContext';
 
@@ -40,6 +41,8 @@ type Props = {
 };
 
 export default function RegisterScreen({ navigation }: Props) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const { register, loginWithGoogle } = useAuth();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -165,7 +168,7 @@ export default function RegisterScreen({ navigation }: Props) {
                     <MaterialIcons
                       name={met ? 'check-circle' : 'radio-button-unchecked'}
                       size={16}
-                      color={met ? Colors.secondary : Colors.outline}
+                      color={met ? colors.secondary : colors.outline}
                     />
                     <Text style={[styles.ruleText, met && styles.ruleTextMet]}>
                       {rule.label}
@@ -217,10 +220,10 @@ export default function RegisterScreen({ navigation }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (c: ThemeColors) => StyleSheet.create({
   container: {
     flexGrow: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: c.background,
     alignItems: 'center',
     paddingHorizontal: 20,
     paddingTop: 60,
@@ -232,7 +235,7 @@ const styles = StyleSheet.create({
     width: 64,
     height: 64,
     borderRadius: 32,
-    backgroundColor: Colors.primaryContainer,
+    backgroundColor: c.primaryContainer,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -240,33 +243,33 @@ const styles = StyleSheet.create({
   title: {
     fontFamily: FontFamily.headlineBold,
     fontSize: FontSize.headlineMD,
-    color: Colors.onSurface,
+    color: c.onSurface,
   },
   titleBrand: {
     fontFamily: FontFamily.brand,
     fontSize: FontSize.headlineMD + 10,
-    color: Colors.primary,
+    color: c.primary,
   },
   sub: {
     fontFamily: FontFamily.bodyMedium,
     fontSize: FontSize.bodyMD,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
     textAlign: 'center',
   },
   form: {
     width: '100%',
-    backgroundColor: Colors.surfaceContainerLowest,
+    backgroundColor: c.surfaceContainerLowest,
     borderRadius: 24,
     padding: 24,
     gap: 16,
-    shadowColor: Colors.primary,
+    shadowColor: c.primary,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.06,
     shadowRadius: 16,
     elevation: 2,
   },
   rulesBox: {
-    backgroundColor: Colors.surfaceContainerLow,
+    backgroundColor: c.surfaceContainerLow,
     borderRadius: 12,
     padding: 12,
     gap: 8,
@@ -279,22 +282,22 @@ const styles = StyleSheet.create({
   ruleText: {
     fontFamily: FontFamily.bodyMedium,
     fontSize: FontSize.labelMD,
-    color: Colors.outline,
+    color: c.outline,
   },
   ruleTextMet: {
-    color: Colors.secondary,
+    color: c.secondary,
   },
   errorText: {
     fontFamily: FontFamily.bodyMedium,
     fontSize: FontSize.labelSM,
-    color: Colors.error,
+    color: c.error,
   },
   divider: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  line: { flex: 1, height: 1, backgroundColor: Colors.outlineVariant },
+  line: { flex: 1, height: 1, backgroundColor: c.outlineVariant },
   dividerText: {
     fontFamily: FontFamily.headlineMedium,
     fontSize: FontSize.labelSM,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
   },
   socialRow: { flexDirection: 'row', gap: 12 },
   socialBtn: { flex: 1 },
@@ -302,18 +305,18 @@ const styles = StyleSheet.create({
   loginText: {
     fontFamily: FontFamily.bodyMedium,
     fontSize: FontSize.bodyMD,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
   },
   loginLink: {
     fontFamily: FontFamily.bodySemiBold,
     fontSize: FontSize.bodyMD,
-    color: Colors.primary,
+    color: c.primary,
   },
   terms: {
     fontFamily: FontFamily.bodyMedium,
     fontSize: FontSize.labelSM,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
     textAlign: 'center',
   },
-  termsLink: { color: Colors.primary },
+  termsLink: { color: c.primary },
 });

@@ -19,7 +19,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { MaterialIcons } from '@expo/vector-icons';
-import { Colors } from '../../constants/colors';
+import { ThemeColors } from '../../constants/themes';
+import { useTheme, useThemedStyles } from '../../context/ThemeContext';
 import { FontFamily, FontSize } from '../../constants/typography';
 import { getNearbyPlaces, getMapFavorites, addMapFavorite, removeMapFavorite, ApiPlace } from '../../api';
 import { BASE_URL } from '../../api/client';
@@ -53,7 +54,9 @@ type Place = {
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
-const CATEGORY_CONFIG: Record<
+const makeCategoryConfig = (
+  c: ThemeColors,
+): Record<
   PlaceCategory,
   {
     icon: keyof typeof MaterialIcons.glyphMap;
@@ -62,43 +65,43 @@ const CATEGORY_CONFIG: Record<
     bgColor: string;
     iconColor: string;
   }
-> = {
+> => ({
   vet: {
     icon: 'local-hospital',
     label: '寵物醫院',
     chipLabel: '醫院',
-    bgColor: Colors.errorContainer,
-    iconColor: Colors.error,
+    bgColor: c.catHospitalBg,
+    iconColor: c.catHospital,
   },
   grooming: {
     icon: 'content-cut',
     label: '寵物美容',
     chipLabel: '美容',
-    bgColor: '#E8DEF8',
-    iconColor: '#6750A4',
+    bgColor: c.catGroomingBg,
+    iconColor: c.catGrooming,
   },
   petstore: {
     icon: 'shopping-bag',
     label: '寵物用品',
     chipLabel: '用品店',
-    bgColor: Colors.primaryFixed,
-    iconColor: Colors.onPrimaryContainer,
+    bgColor: c.catStoreBg,
+    iconColor: c.catStore,
   },
   park: {
     icon: 'local-florist',
     label: '公園',
     chipLabel: '公園',
-    bgColor: Colors.secondaryContainer,
-    iconColor: Colors.secondary,
+    bgColor: c.catParkBg,
+    iconColor: c.catPark,
   },
   restaurant: {
     icon: 'restaurant',
     label: '友善餐廳',
     chipLabel: '餐廳',
-    bgColor: '#FFF9C4',
-    iconColor: '#F9A825',
+    bgColor: c.catRestaurantBg,
+    iconColor: c.catRestaurant,
   },
-};
+});
 
 const FILTER_OPTIONS: { key: FilterOption; label: string }[] = [
   { key: 'all', label: '全部' },
@@ -152,7 +155,7 @@ function todayHours(weekdayHours?: string[]): string | undefined {
 }
 
 function mapApiPlace(
-  r: { id: string; name: string; type: string; address: string; phone?: string; rating?: number; weekdayHours?: string[]; is24Hours?: boolean; exoticFriendly?: boolean; photoUrl?: string; photoRef?: string; lat: number; lng: number },
+  r: ApiPlace,
   userLoc?: { latitude: number; longitude: number }
 ): Place {
   const resolvedPhotoUrl =
@@ -169,6 +172,12 @@ function mapApiPlace(
     weekdayHours: r.weekdayHours,
     is24Hours: r.is24Hours,
     exoticFriendly: r.exoticFriendly,
+    // 合作夥伴欄位。沒接這幾行的話 isPartner 永遠是 undefined，
+    // PartnerPlaceCard 就不會被觸發
+    isPartner: r.isPartner,
+    description: r.description,
+    tags: r.tags,
+    photos: r.photos,
     hours: todayHours(r.weekdayHours),
     photoUrl: resolvedPhotoUrl,
     distance: userLoc ? calcDistance(userLoc.latitude, userLoc.longitude, r.lat, r.lng) : undefined,
@@ -359,6 +368,8 @@ const TAB_BAR_HEIGHT = 60;
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function MapScreen() {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const mapRef = useRef<any>(null);
@@ -380,6 +391,8 @@ export default function MapScreen() {
     }
   }, [activeFilter]);
   const [selectedPlace, setSelectedPlace] = useState<Place | null>(null);
+  // FAB 要疊在卡片上方，卡片高度會隨介紹文展開而變，所以用量的不用寫死
+  const [cardHeight, setCardHeight] = useState(0);
   const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const [mapCenter, setMapCenter] = useState({ latitude: TAIPEI_REGION.latitude, longitude: TAIPEI_REGION.longitude, radiusM: 5000 });
   const [places, setPlaces] = useState<Place[]>([]);
@@ -604,7 +617,7 @@ export default function MapScreen() {
         }}
       >
         {filteredPlaces.map((place) => {
-          const cfg = CATEGORY_CONFIG[place.category];
+          const cfg = makeCategoryConfig(colors)[place.category];
           const isSelected = selectedPlace?.id === place.id;
           return (
             <Marker
@@ -624,7 +637,11 @@ export default function MapScreen() {
                 >
                   <MaterialIcons name={cfg.icon} size={isSelected ? 22 : 18} color={cfg.iconColor} />
                 </View>
-                {place.isPartner && <View style={styles.partnerDot} />}
+                {place.isPartner && (
+                  <View style={styles.partnerStar}>
+                    <MaterialIcons name="star" size={11} color={colors.onPartnerBadge} />
+                  </View>
+                )}
               </View>
             </Marker>
           );
@@ -640,7 +657,7 @@ export default function MapScreen() {
         >
           {FILTER_OPTIONS.map((opt) => {
             const isActive = activeFilter === opt.key;
-            const cfg = opt.key !== 'all' ? CATEGORY_CONFIG[opt.key as PlaceCategory] : null;
+            const cfg = opt.key !== 'all' ? makeCategoryConfig(colors)[opt.key as PlaceCategory] : null;
             return (
               <TouchableOpacity
                 key={opt.key}
@@ -652,7 +669,7 @@ export default function MapScreen() {
                   <MaterialIcons
                     name={cfg.icon}
                     size={15}
-                    color={isActive ? Colors.onPrimary : Colors.primary}
+                    color={isActive ? colors.onPrimary : colors.primary}
                   />
                 )}
                 <Text style={[styles.chipLabel, isActive && styles.chipLabelActive]}>
@@ -665,7 +682,7 @@ export default function MapScreen() {
 
         {placesLoading && (
           <View style={styles.loadingNotice}>
-            <ActivityIndicator size="small" color={Colors.primary} />
+            <ActivityIndicator size="small" color={colors.primary} />
             <Text style={styles.loadingNoticeText}>搜尋店家中...</Text>
           </View>
         )}
@@ -680,11 +697,13 @@ export default function MapScreen() {
 
       {/* ── FAB Group ─────────────────────────────────────────────── */}
       {(() => {
-        const fabOffset = selectedPlace ? (selectedPlace.isPartner ? 350 : 150) : 0;
+        // 原本寫死 350 / 150，介紹文展開後卡片會長高、FAB 就疊上去了。
+        // 改成量測實際高度，之後卡片內容再變也不用回來調這個數字。
+        const fabOffset = selectedPlace ? cardHeight + 12 : 0;
         return (
           <View style={[styles.fabGroup, { bottom: cardBottom + fabOffset }]}>
             <TouchableOpacity style={styles.fab} onPress={goToMyLocation} activeOpacity={0.85}>
-              <MaterialIcons name="my-location" size={22} color={Colors.onPrimary} />
+              <MaterialIcons name="my-location" size={22} color={colors.onPrimary} />
             </TouchableOpacity>
             {(activeFilter === 'vet' || activeFilter === 'petstore' || activeFilter === 'grooming') && (
               <TouchableOpacity
@@ -692,7 +711,7 @@ export default function MapScreen() {
                 onPress={() => navigation.navigate('PetCareGuide', { category: activeFilter })}
                 activeOpacity={0.85}
               >
-                <MaterialIcons name="menu-book" size={22} color={Colors.onPrimary} />
+                <MaterialIcons name="menu-book" size={22} color={colors.onPrimary} />
               </TouchableOpacity>
             )}
             <TouchableOpacity
@@ -703,7 +722,7 @@ export default function MapScreen() {
               <MaterialIcons
                 name={favoriteIds.size > 0 ? 'favorite' : 'favorite-border'}
                 size={22}
-                color={Colors.onPrimary}
+                color={colors.onPrimary}
               />
               {favoriteIds.size > 0 && (
                 <View style={styles.fabBadge}>
@@ -718,7 +737,7 @@ export default function MapScreen() {
               onPress={() => setViewMode('list')}
               activeOpacity={0.85}
             >
-              <MaterialIcons name="format-list-bulleted" size={20} color={Colors.onSurface} />
+              <MaterialIcons name="format-list-bulleted" size={20} color={colors.onSurface} />
             </TouchableOpacity>
 
             {/* 24hr 篩選（僅醫院分類顯示） */}
@@ -734,7 +753,7 @@ export default function MapScreen() {
                 <MaterialIcons
                   name="schedule"
                   size={18}
-                  color={is24hrOnly ? Colors.onPrimary : Colors.onSurface}
+                  color={is24hrOnly ? colors.onPrimary : colors.onSurface}
                 />
                 <Text style={[styles.hour24Label, is24hrOnly && styles.hour24LabelActive]}>24hr</Text>
               </TouchableOpacity>
@@ -753,7 +772,7 @@ export default function MapScreen() {
                 <MaterialIcons
                   name="egg"
                   size={18}
-                  color={exoticOnly ? Colors.onPrimary : Colors.onSurface}
+                  color={exoticOnly ? colors.onPrimary : colors.onSurface}
                 />
                 <Text style={[styles.hour24Label, exoticOnly && styles.hour24LabelActive]}>特寵</Text>
               </TouchableOpacity>
@@ -770,6 +789,7 @@ export default function MapScreen() {
           !selectedPlace && styles.cardHidden,
         ]}
         pointerEvents={selectedPlace ? 'auto' : 'none'}
+        onLayout={(e) => setCardHeight(e.nativeEvent.layout.height)}
       >
         {selectedPlace && (
           selectedPlace.isPartner
@@ -827,7 +847,9 @@ function PlaceCard({
   isFav: boolean;
   onToggleFavorite: () => void;
 }) {
-  const cfg = CATEGORY_CONFIG[place.category];
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
+  const cfg = makeCategoryConfig(colors)[place.category];
 
   return (
     <View style={styles.cardInner}>
@@ -840,8 +862,8 @@ function PlaceCard({
         )}
         {place.isPartner && (
           <View style={styles.partnerBadge}>
-            <MaterialIcons name="verified" size={10} color={Colors.onPrimary} />
-            <Text style={styles.partnerBadgeText}>合作</Text>
+            <MaterialIcons name="star" size={11} color={colors.onPartnerBadge} />
+            <Text style={styles.partnerBadgeText}>合作夥伴</Text>
           </View>
         )}
         <TouchableOpacity
@@ -852,7 +874,7 @@ function PlaceCard({
           <MaterialIcons
             name={isFav ? 'favorite' : 'favorite-border'}
             size={16}
-            color={isFav ? '#E53935' : Colors.onSurface}
+            color={isFav ? colors.favorite : colors.onSurface}
           />
         </TouchableOpacity>
       </View>
@@ -878,7 +900,7 @@ function PlaceCard({
         {/* Phone */}
         {place.phone && (
           <Text style={styles.cardMeta} numberOfLines={1}>
-            <MaterialIcons name="phone" size={11} color={Colors.outline} /> {place.phone}
+            <MaterialIcons name="phone" size={11} color={colors.outline} /> {place.phone}
           </Text>
         )}
 
@@ -896,7 +918,7 @@ function PlaceCard({
             onPress={() => onNavigate(place)}
             activeOpacity={0.85}
           >
-            <MaterialIcons name="map" size={14} color={Colors.onPrimary} />
+            <MaterialIcons name="map" size={14} color={colors.onPrimary} />
             <Text style={styles.btnMapsText}>Google Maps</Text>
           </TouchableOpacity>
           <TouchableOpacity
@@ -904,7 +926,7 @@ function PlaceCard({
             onPress={onClose}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
-            <MaterialIcons name="close" size={18} color={Colors.outline} />
+            <MaterialIcons name="close" size={18} color={colors.outline} />
           </TouchableOpacity>
         </View>
       </View>
@@ -927,9 +949,14 @@ function PartnerPlaceCard({
   isFav: boolean;
   onToggleFavorite: () => void;
 }) {
-  const cfg = CATEGORY_CONFIG[place.category];
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
+  const cfg = makeCategoryConfig(colors)[place.category];
   const [photoIndex, setPhotoIndex] = useState(0);
   const photoOpacity = useRef(new Animated.Value(1)).current;
+  const [descExpanded, setDescExpanded] = useState(false);
+  // onTextLayout 量到超過 2 行才算被截斷
+  const [descTruncated, setDescTruncated] = useState(false);
   const hasPhotos = !!(place.photos && place.photos.length > 0);
 
   useEffect(() => {
@@ -956,6 +983,12 @@ function PartnerPlaceCard({
     }, 2500);
     return () => clearInterval(interval);
   }, [place.id, place.photos?.length]);
+
+  // 換一家店時收回展開狀態，否則下一家會直接是展開的
+  useEffect(() => {
+    setDescExpanded(false);
+    setDescTruncated(false);
+  }, [place.id]);
 
   return (
     <View style={styles.partnerCard}>
@@ -988,7 +1021,7 @@ function PartnerPlaceCard({
           <MaterialIcons
             name={isFav ? 'favorite' : 'favorite-border'}
             size={16}
-            color={isFav ? '#E53935' : (hasPhotos ? '#fff' : Colors.onSurface)}
+            color={isFav ? colors.favorite : (hasPhotos ? '#fff' : colors.onSurface)}
           />
         </TouchableOpacity>
 
@@ -998,7 +1031,7 @@ function PartnerPlaceCard({
           onPress={onClose}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
-          <MaterialIcons name="close" size={16} color={hasPhotos ? '#fff' : Colors.onSurface} />
+          <MaterialIcons name="close" size={16} color={hasPhotos ? '#fff' : colors.onSurface} />
         </TouchableOpacity>
 
         {/* Main icon (no-photo fallback) */}
@@ -1010,7 +1043,7 @@ function PartnerPlaceCard({
 
         {/* Partner badge */}
         <View style={styles.heroPartnerBadge}>
-          <MaterialIcons name="verified" size={11} color={Colors.onPrimary} />
+          <MaterialIcons name="verified" size={11} color={colors.onPrimary} />
           <Text style={styles.heroPartnerText}>合作夥伴</Text>
         </View>
 
@@ -1046,14 +1079,14 @@ function PartnerPlaceCard({
         <View style={styles.partnerStatsRow}>
           {place.distance && (
             <View style={styles.partnerStat}>
-              <MaterialIcons name="place" size={13} color={Colors.outline} />
+              <MaterialIcons name="place" size={13} color={colors.outline} />
               <Text style={styles.partnerStatText}>{place.distance}</Text>
             </View>
           )}
           {place.distance && place.hours && <View style={styles.partnerStatDivider} />}
           {place.hours && (
             <View style={styles.partnerStat}>
-              <MaterialIcons name="access-time" size={13} color={Colors.outline} />
+              <MaterialIcons name="access-time" size={13} color={colors.outline} />
               <Text style={styles.partnerStatText}>{place.hours}</Text>
             </View>
           )}
@@ -1062,16 +1095,40 @@ function PartnerPlaceCard({
             <>
               <View style={styles.partnerStatDivider} />
               <View style={styles.partnerStat}>
-                <MaterialIcons name="phone" size={13} color={Colors.outline} />
+                <MaterialIcons name="phone" size={13} color={colors.outline} />
                 <Text style={styles.partnerStatText}>{place.phone}</Text>
               </View>
             </>
           )}
         </View>
 
-        {/* Description */}
+        {/* Description —— 收合時 2 行，點「展開」看完整內容 */}
         {place.description && (
-          <Text style={styles.partnerDesc} numberOfLines={2}>{place.description}</Text>
+          <View>
+            {/*
+              量測用的隱形副本。onTextLayout 在有 numberOfLines 時只會回傳
+              「可見的那幾行」，所以不能直接在下面那個 Text 上量 —— 永遠量到 2，
+              判斷不出有沒有被截斷。這裡用一份沒有行數限制的副本量真實行數。
+            */}
+            <Text
+              style={[styles.partnerDesc, styles.descMeasure]}
+              pointerEvents="none"
+              onTextLayout={(e) => {
+                const truncated = e.nativeEvent.lines.length > 2;
+                if (truncated !== descTruncated) setDescTruncated(truncated);
+              }}
+            >
+              {place.description}
+            </Text>
+            <Text style={styles.partnerDesc} numberOfLines={descExpanded ? undefined : 2}>
+              {place.description}
+            </Text>
+            {descTruncated && (
+              <TouchableOpacity onPress={() => setDescExpanded((v) => !v)} activeOpacity={0.7}>
+                <Text style={styles.descToggle}>{descExpanded ? '收合' : '展開'}</Text>
+              </TouchableOpacity>
+            )}
+          </View>
         )}
 
         {/* Tags */}
@@ -1087,13 +1144,17 @@ function PartnerPlaceCard({
 
         {/* Buttons */}
         <View style={styles.partnerButtons}>
-          <TouchableOpacity style={styles.btnMaps} onPress={() => onNavigate(place)} activeOpacity={0.85}>
-            <MaterialIcons name="map" size={14} color={Colors.onPrimary} />
-            <Text style={styles.btnMapsText}>Google Maps</Text>
+          {/*
+            主副層級：「立即聯絡」才是合作夥伴的加值，所以它是實心主要按鈕；
+            導航到處都有，退成外框次要按鈕。原本是反過來的。
+          */}
+          <TouchableOpacity style={styles.btnCallPrimary} onPress={() => place.phone && Linking.openURL(`tel:${place.phone}`)} activeOpacity={0.85}>
+            <MaterialIcons name="phone" size={14} color={colors.onPrimary} />
+            <Text style={styles.btnCallPrimaryText}>立即聯絡</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.btnCall} onPress={() => place.phone && Linking.openURL(`tel:${place.phone}`)} activeOpacity={0.85}>
-            <MaterialIcons name="phone" size={14} color={Colors.primary} />
-            <Text style={styles.btnCallText}>立即聯絡</Text>
+          <TouchableOpacity style={styles.btnMapsOutline} onPress={() => onNavigate(place)} activeOpacity={0.85}>
+            <MaterialIcons name="map" size={14} color={colors.primary} />
+            <Text style={styles.btnMapsOutlineText}>Google Maps</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -1114,6 +1175,8 @@ function FavoritesSheet({
   onSelectPlace: (place: Place) => void;
   onToggleFavorite: (id: string) => void;
 }) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const [catFilter, setCatFilter] = useState<FilterOption>('all');
   const allFavPlaces = favoritePlaces;
   const favPlaces = catFilter === 'all'
@@ -1132,13 +1195,13 @@ function FavoritesSheet({
         <Text style={styles.favTitle}>我的最愛</Text>
         <Text style={styles.favCount}>{allFavPlaces.length} 個景點</Text>
         <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-          <MaterialIcons name="close" size={20} color={Colors.onSurface} />
+          <MaterialIcons name="close" size={20} color={colors.onSurface} />
         </TouchableOpacity>
       </View>
 
       {allFavPlaces.length === 0 ? (
         <View style={styles.favEmpty}>
-          <MaterialIcons name="favorite-border" size={44} color={Colors.outlineVariant} />
+          <MaterialIcons name="favorite-border" size={44} color={colors.outlineVariant} />
           <Text style={styles.favEmptyText}>尚未加入任何景點</Text>
           <Text style={styles.favEmptyHint}>點選地圖圖示上的 ♡ 即可收藏</Text>
         </View>
@@ -1153,7 +1216,7 @@ function FavoritesSheet({
             >
               {availableCats.map(opt => {
                 const isActive = catFilter === opt.key;
-                const cfg = opt.key !== 'all' ? CATEGORY_CONFIG[opt.key as PlaceCategory] : null;
+                const cfg = opt.key !== 'all' ? makeCategoryConfig(colors)[opt.key as PlaceCategory] : null;
                 return (
                   <TouchableOpacity
                     key={opt.key}
@@ -1165,7 +1228,7 @@ function FavoritesSheet({
                       <MaterialIcons
                         name={cfg.icon}
                         size={13}
-                        color={isActive ? Colors.onPrimary : Colors.primary}
+                        color={isActive ? colors.onPrimary : colors.primary}
                       />
                     )}
                     <Text style={[styles.favChipLabel, isActive && styles.favChipLabelActive]}>
@@ -1184,7 +1247,7 @@ function FavoritesSheet({
               </View>
             ) : (
               favPlaces.map(place => {
-                const cfg = CATEGORY_CONFIG[place.category];
+                const cfg = makeCategoryConfig(colors)[place.category];
                 return (
                   <TouchableOpacity
                     key={place.id}
@@ -1199,7 +1262,7 @@ function FavoritesSheet({
                       <View style={styles.favItemNameRow}>
                         <Text style={styles.favItemName} numberOfLines={1}>{place.name}</Text>
                         {place.isPartner && (
-                          <MaterialIcons name="verified" size={13} color={Colors.primary} />
+                          <MaterialIcons name="verified" size={13} color={colors.primary} />
                         )}
                       </View>
                       <Text style={styles.favItemMeta} numberOfLines={1}>
@@ -1225,7 +1288,7 @@ function FavoritesSheet({
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const styles = StyleSheet.create({
+const makeStyles = (c: ThemeColors) => StyleSheet.create({
   container: { flex: 1 },
   map: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
 
@@ -1242,12 +1305,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
     alignSelf: 'center',
-    backgroundColor: Colors.surfaceContainerLowest,
+    backgroundColor: c.surfaceContainerLowest,
     borderRadius: 20,
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderWidth: 1,
-    borderColor: Colors.outlineVariant,
+    borderColor: c.outlineVariant,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.08,
@@ -1257,19 +1320,19 @@ const styles = StyleSheet.create({
   loadingNoticeText: {
     fontFamily: FontFamily.bodyMedium,
     fontSize: 11,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
   },
   restaurantNotice: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
     alignSelf: 'center',
-    backgroundColor: '#FFF8E1',
+    backgroundColor: c.warningContainer,
     borderRadius: 20,
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderWidth: 1,
-    borderColor: '#F9A825',
+    borderColor: c.warning,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.08,
@@ -1279,17 +1342,17 @@ const styles = StyleSheet.create({
   restaurantNoticeText: {
     fontFamily: FontFamily.bodyMedium,
     fontSize: 11,
-    color: '#7A5800',
+    color: c.onWarningContainer,
   },
   listToggleBtn: {
     width: 50,
     height: 50,
     borderRadius: 14,
-    backgroundColor: Colors.surfaceContainerLowest,
+    backgroundColor: c.surfaceContainerLowest,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: Colors.outlineVariant,
+    borderColor: c.outlineVariant,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.12,
@@ -1297,8 +1360,8 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   listToggleBtnActive: {
-    backgroundColor: '#0080FF',
-    borderColor: '#0080FF',
+    backgroundColor: c.info,
+    borderColor: c.info,
   },
   hour24Btn: {
     height: 54,
@@ -1307,10 +1370,10 @@ const styles = StyleSheet.create({
   hour24Label: {
     fontFamily: FontFamily.headlineSemiBold,
     fontSize: 10,
-    color: Colors.onSurface,
+    color: c.onSurface,
   },
   hour24LabelActive: {
-    color: Colors.onPrimary,
+    color: c.onPrimary,
   },
   filterScroll: {
     paddingHorizontal: 16,
@@ -1323,9 +1386,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 9999,
-    backgroundColor: Colors.surfaceContainerLowest,
+    backgroundColor: c.surfaceContainerLowest,
     borderWidth: 1,
-    borderColor: Colors.outlineVariant,
+    borderColor: c.outlineVariant,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.08,
@@ -1333,16 +1396,16 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   chipActive: {
-    backgroundColor: Colors.primary,
-    borderColor: Colors.primary,
+    backgroundColor: c.primary,
+    borderColor: c.primary,
   },
   chipLabel: {
     fontFamily: FontFamily.headlineMedium,
     fontSize: FontSize.labelMD,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
   },
   chipLabelActive: {
-    color: Colors.onPrimary,
+    color: c.onPrimary,
   },
 
   // Map pins
@@ -1360,7 +1423,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 2.5,
-    borderColor: Colors.surfaceContainerLowest,
+    borderColor: c.surfaceContainerLowest,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.18,
@@ -1372,18 +1435,22 @@ const styles = StyleSheet.create({
     height: 52,
     borderRadius: 26,
     borderWidth: 3,
-    borderColor: Colors.primary,
+    borderColor: c.primary,
   },
-  partnerDot: {
+  // 星星本身有縫隙，直接放在地圖上會糊掉 —— 外面包一個 primary 圓底，
+  // 再用底色描邊跟地圖分離，跟原本的圓點一樣醒目但語意更明確
+  partnerStar: {
     position: 'absolute',
-    top: 0,
-    right: 0,
-    width: 11,
-    height: 11,
-    borderRadius: 6,
-    backgroundColor: Colors.primary,
+    top: -2,
+    right: -2,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: c.partnerBadge,
     borderWidth: 2,
-    borderColor: Colors.surfaceContainerLowest,
+    borderColor: c.surfaceContainerLowest,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 
   // FAB
@@ -1391,7 +1458,7 @@ const styles = StyleSheet.create({
     width: 50,
     height: 50,
     borderRadius: 14,
-    backgroundColor: Colors.primary,
+    backgroundColor: c.primary,
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#000',
@@ -1413,7 +1480,7 @@ const styles = StyleSheet.create({
   },
   cardInner: {
     flexDirection: 'row',
-    backgroundColor: Colors.surfaceContainerLowest,
+    backgroundColor: c.surfaceContainerLowest,
     borderRadius: 20,
     overflow: 'hidden',
     shadowColor: '#000',
@@ -1422,7 +1489,7 @@ const styles = StyleSheet.create({
     shadowRadius: 16,
     elevation: 8,
     borderWidth: 1,
-    borderColor: Colors.outlineVariant + '40',
+    borderColor: c.outlineVariant + '40',
   },
   cardPhoto: {
     width: '32%',
@@ -1430,22 +1497,26 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  partnerAccentBar: {
+    height: 4,
+    backgroundColor: c.partnerAccent,
+  },
   partnerBadge: {
     position: 'absolute',
     bottom: 8,
     left: 8,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 3,
-    backgroundColor: Colors.primary,
-    paddingHorizontal: 7,
-    paddingVertical: 3,
+    gap: 4,
+    backgroundColor: c.partnerBadge,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
     borderRadius: 9999,
   },
   partnerBadgeText: {
     fontFamily: FontFamily.headlineBold,
-    fontSize: 9,
-    color: Colors.onPrimary,
+    fontSize: 10,
+    color: c.onPartnerBadge,
   },
   cardInfo: {
     flex: 1,
@@ -1476,18 +1547,18 @@ const styles = StyleSheet.create({
   ratingText: {
     fontFamily: FontFamily.headlineSemiBold,
     fontSize: FontSize.labelSM,
-    color: Colors.onSurface,
+    color: c.onSurface,
   },
   cardName: {
     fontFamily: FontFamily.headlineBold,
     fontSize: FontSize.bodyMD,
-    color: Colors.onSurface,
+    color: c.onSurface,
     marginBottom: 2,
   },
   cardMeta: {
     fontFamily: FontFamily.bodyMedium,
     fontSize: FontSize.labelSM,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
     marginBottom: 8,
   },
   cardButtons: {
@@ -1495,33 +1566,64 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
   },
+  btnCallPrimary: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    backgroundColor: c.primary,
+    paddingVertical: 9,
+    borderRadius: 10,
+  },
+  btnCallPrimaryText: {
+    fontFamily: FontFamily.headlineSemiBold,
+    fontSize: FontSize.labelMD,
+    color: c.onPrimary,
+  },
+  btnMapsOutline: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    borderWidth: 1.5,
+    borderColor: c.primary,
+    paddingVertical: 9,
+    borderRadius: 10,
+  },
+  btnMapsOutlineText: {
+    fontFamily: FontFamily.headlineSemiBold,
+    fontSize: FontSize.labelMD,
+    color: c.primary,
+  },
   btnMaps: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 5,
-    backgroundColor: Colors.primary,
+    backgroundColor: c.primary,
     paddingVertical: 9,
     borderRadius: 10,
   },
   btnMapsText: {
     fontFamily: FontFamily.headlineSemiBold,
     fontSize: FontSize.labelMD,
-    color: Colors.onPrimary,
+    color: c.onPrimary,
   },
   btnClose: {
     width: 36,
     height: 36,
     borderRadius: 9,
-    backgroundColor: Colors.surfaceContainerHigh,
+    backgroundColor: c.surfaceContainerHigh,
     alignItems: 'center',
     justifyContent: 'center',
   },
 
   // ── Partner card ──────────────────────────────────────────────
   partnerCard: {
-    backgroundColor: Colors.surfaceContainerLowest,
+    backgroundColor: c.surfaceContainerLowest,
     borderRadius: 24,
     overflow: 'hidden',
     shadowColor: '#000',
@@ -1530,7 +1632,7 @@ const styles = StyleSheet.create({
     shadowRadius: 20,
     elevation: 10,
     borderWidth: 1,
-    borderColor: Colors.outlineVariant + '30',
+    borderColor: c.outlineVariant + '30',
   },
   partnerHero: {
     height: 130,
@@ -1563,7 +1665,7 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: Colors.surfaceContainerLowest + 'CC',
+    backgroundColor: c.surfaceContainerLowest + 'CC',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1581,7 +1683,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: Colors.primary,
+    backgroundColor: c.primary,
     paddingHorizontal: 9,
     paddingVertical: 4,
     borderRadius: 9999,
@@ -1589,7 +1691,7 @@ const styles = StyleSheet.create({
   heroPartnerText: {
     fontFamily: FontFamily.headlineBold,
     fontSize: 10,
-    color: Colors.onPrimary,
+    color: c.onPrimary,
   },
   heroRatingBadge: {
     position: 'absolute',
@@ -1598,7 +1700,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 3,
-    backgroundColor: Colors.surfaceContainerLowest + 'E6',
+    backgroundColor: c.surfaceContainerLowest + 'E6',
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 9999,
@@ -1606,7 +1708,7 @@ const styles = StyleSheet.create({
   heroRatingText: {
     fontFamily: FontFamily.headlineBold,
     fontSize: FontSize.labelMD,
-    color: Colors.onSurface,
+    color: c.onSurface,
   },
   partnerContent: {
     paddingHorizontal: 16,
@@ -1624,7 +1726,7 @@ const styles = StyleSheet.create({
     flex: 1,
     fontFamily: FontFamily.headlineBold,
     fontSize: FontSize.bodyLG,
-    color: Colors.onSurface,
+    color: c.onSurface,
   },
   partnerStatsRow: {
     flexDirection: 'row',
@@ -1639,24 +1741,38 @@ const styles = StyleSheet.create({
   partnerStatText: {
     fontFamily: FontFamily.bodyMedium,
     fontSize: FontSize.labelSM,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
   },
   partnerStatDivider: {
     width: 1,
     height: 12,
-    backgroundColor: Colors.outlineVariant,
+    backgroundColor: c.outlineVariant,
   },
   partnerDesc: {
     fontFamily: FontFamily.bodyMedium,
     fontSize: FontSize.labelMD,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
     lineHeight: 20,
+  },
+  // 佔 0 空間、看不見，純粹拿來量行數
+  descMeasure: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    opacity: 0,
+    zIndex: -1,
+  },
+  descToggle: {
+    fontFamily: FontFamily.headlineMedium,
+    fontSize: FontSize.labelSM,
+    color: c.primary,
+    marginTop: 4,
   },
   tagsScroll: {
     flexGrow: 0,
   },
   tag: {
-    backgroundColor: Colors.surfaceContainerHigh,
+    backgroundColor: c.surfaceContainerHigh,
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 9999,
@@ -1665,7 +1781,7 @@ const styles = StyleSheet.create({
   tagText: {
     fontFamily: FontFamily.headlineMedium,
     fontSize: FontSize.labelSM,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
   },
   partnerButtons: {
     flexDirection: 'row',
@@ -1679,14 +1795,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 5,
     borderWidth: 1.5,
-    borderColor: Colors.primary,
+    borderColor: c.primary,
     paddingVertical: 9,
     borderRadius: 10,
   },
   btnCallText: {
     fontFamily: FontFamily.headlineSemiBold,
     fontSize: FontSize.labelMD,
-    color: Colors.primary,
+    color: c.primary,
   },
 
   // Photo slideshow
@@ -1731,10 +1847,10 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   fabHeart: {
-    backgroundColor: '#E53935',
+    backgroundColor: c.favorite,
   },
   fabCareGuide: {
-    backgroundColor: '#006000',
+    backgroundColor: c.careGuide,
   },
   fabBadge: {
     position: 'absolute',
@@ -1743,17 +1859,17 @@ const styles = StyleSheet.create({
     minWidth: 18,
     height: 18,
     borderRadius: 9,
-    backgroundColor: Colors.onPrimary,
+    backgroundColor: c.onPrimary,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 3,
     borderWidth: 1.5,
-    borderColor: '#E53935',
+    borderColor: c.favorite,
   },
   fabBadgeText: {
     fontFamily: FontFamily.headlineBold,
     fontSize: 10,
-    color: '#E53935',
+    color: c.favorite,
   },
 
   // Heart buttons on cards
@@ -1764,7 +1880,7 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: Colors.surfaceContainerLowest + 'CC',
+    backgroundColor: c.surfaceContainerLowest + 'CC',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1775,14 +1891,14 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: Colors.surfaceContainerLowest + 'CC',
+    backgroundColor: c.surfaceContainerLowest + 'CC',
     alignItems: 'center',
     justifyContent: 'center',
   },
 
   // Favorites sheet
   favSheet: {
-    backgroundColor: Colors.surfaceContainerLowest,
+    backgroundColor: c.surfaceContainerLowest,
     borderRadius: 24,
     overflow: 'hidden',
     shadowColor: '#000',
@@ -1796,7 +1912,7 @@ const styles = StyleSheet.create({
     width: 36,
     height: 4,
     borderRadius: 2,
-    backgroundColor: Colors.outlineVariant,
+    backgroundColor: c.outlineVariant,
     alignSelf: 'center',
     marginTop: 10,
     marginBottom: 4,
@@ -1808,13 +1924,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.surfaceVariant,
+    borderBottomColor: c.surfaceVariant,
   },
   favTitle: {
     flex: 1,
     fontFamily: FontFamily.headlineBold,
     fontSize: FontSize.bodyMD,
-    color: Colors.onSurface,
+    color: c.onSurface,
   },
   favEmpty: {
     alignItems: 'center',
@@ -1825,12 +1941,12 @@ const styles = StyleSheet.create({
   favEmptyText: {
     fontFamily: FontFamily.headlineSemiBold,
     fontSize: FontSize.bodyMD,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
   },
   favEmptyHint: {
     fontFamily: FontFamily.bodyMedium,
     fontSize: FontSize.labelMD,
-    color: Colors.outline,
+    color: c.outline,
   },
   favList: {
     maxHeight: 300,
@@ -1842,7 +1958,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.surfaceVariant + '80',
+    borderBottomColor: c.surfaceVariant + '80',
   },
   favItemIcon: {
     width: 44,
@@ -1863,18 +1979,18 @@ const styles = StyleSheet.create({
   favItemName: {
     fontFamily: FontFamily.headlineSemiBold,
     fontSize: FontSize.bodyMD,
-    color: Colors.onSurface,
+    color: c.onSurface,
   },
   favItemMeta: {
     fontFamily: FontFamily.bodyMedium,
     fontSize: FontSize.labelSM,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
   },
   favCount: {
     flex: 1,
     fontFamily: FontFamily.bodyMedium,
     fontSize: FontSize.labelMD,
-    color: Colors.outline,
+    color: c.outline,
   },
   favChipRow: {
     paddingHorizontal: 16,
@@ -1888,21 +2004,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 9999,
-    backgroundColor: Colors.surfaceContainerHigh,
+    backgroundColor: c.surfaceContainerHigh,
     borderWidth: 1,
-    borderColor: Colors.outlineVariant,
+    borderColor: c.outlineVariant,
   },
   favChipActive: {
-    backgroundColor: Colors.primary,
-    borderColor: Colors.primary,
+    backgroundColor: c.primary,
+    borderColor: c.primary,
   },
   favChipLabel: {
     fontFamily: FontFamily.headlineMedium,
     fontSize: FontSize.labelSM,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
   },
   favChipLabelActive: {
-    color: Colors.onPrimary,
+    color: c.onPrimary,
   },
   favCatEmpty: {
     alignItems: 'center',
@@ -1914,11 +2030,11 @@ const styles = StyleSheet.create({
     width: 46,
     height: 46,
     borderRadius: 23,
-    backgroundColor: Colors.primary,
+    backgroundColor: c.primary,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 3,
-    borderColor: Colors.onPrimary,
+    borderColor: c.onPrimary,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
@@ -1928,6 +2044,6 @@ const styles = StyleSheet.create({
   clusterText: {
     fontFamily: FontFamily.headlineBold,
     fontSize: FontSize.bodyMD,
-    color: Colors.onPrimary,
+    color: c.onPrimary,
   },
 });

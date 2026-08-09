@@ -7,8 +7,6 @@ import {
   TouchableOpacity,
   Image,
   TextInput,
-  Dimensions,
-
   Alert,
   ActionSheetIOS,
   Platform,
@@ -20,12 +18,11 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RouteProp } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import { RootStackParamList } from '../../types/navigation';
-import { Colors } from '../../constants/colors';
+import { ThemeColors } from '../../constants/themes';
+import { useTheme, useThemedStyles } from '../../context/ThemeContext';
 import { FontFamily, FontSize, LineHeight } from '../../constants/typography';
 import { getDiaryEntries, addDiaryEntry } from '../../api';
 import { DiaryEntry } from '../../types';
-
-const { width } = Dimensions.get('window');
 
 // ─── Mood config ─────────────────────────────────────────────────────────────
 const MOODS = [
@@ -89,6 +86,8 @@ type Props = {
 
 // ─── Component ───────────────────────────────────────────────────────────────
 export default function DailyLogScreen({ navigation, route }: Props) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const insets = useSafeAreaInsets();
   const { petId, petName } = route.params;
 
@@ -243,7 +242,7 @@ export default function DailyLogScreen({ navigation, route }: Props) {
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.iconBtn}>
-          <MaterialIcons name="arrow-back" size={24} color={Colors.onSurface} />
+          <MaterialIcons name="arrow-back" size={24} color={colors.onSurface} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>{monthLabel(selectedDate)}日誌</Text>
         <View style={styles.iconBtn} />
@@ -254,7 +253,7 @@ export default function DailyLogScreen({ navigation, route }: Props) {
         {/* Nav row */}
         <View style={styles.calNavRow}>
           <TouchableOpacity style={styles.calNavBtn} onPress={viewMode === 'week' ? prevWeek : prevMonth}>
-            <MaterialIcons name="chevron-left" size={22} color={Colors.onSurface} />
+            <MaterialIcons name="chevron-left" size={22} color={colors.onSurface} />
           </TouchableOpacity>
           <Text style={styles.calNavLabel}>
             {viewMode === 'week' ? buildWeekLabel(weekStart) : `${calYear} 年 ${calMonth + 1} 月`}
@@ -267,14 +266,14 @@ export default function DailyLogScreen({ navigation, route }: Props) {
             <MaterialIcons
               name="chevron-right"
               size={22}
-              color={(viewMode === 'week' ? canNextWeek : canNextMonth) ? Colors.onSurface : Colors.outlineVariant}
+              color={(viewMode === 'week' ? canNextWeek : canNextMonth) ? colors.onSurface : colors.outlineVariant}
             />
           </TouchableOpacity>
           <TouchableOpacity style={styles.calToggleBtn} onPress={toggleViewMode}>
             <MaterialIcons
               name={viewMode === 'week' ? 'calendar-month' : 'view-week'}
               size={18}
-              color={Colors.primary}
+              color={colors.primary}
             />
           </TouchableOpacity>
         </View>
@@ -388,7 +387,7 @@ export default function DailyLogScreen({ navigation, route }: Props) {
                 navigation.navigate('MainTabs', { screen: 'Community', params: { sharePhoto: photo, sharePetName: petName } } as any);
               }}
             >
-              <MaterialIcons name="people" size={18} color={Colors.primary} />
+              <MaterialIcons name="people" size={18} color={colors.primary} />
               <Text style={styles.shareEntryBtnLabel}>分享到社群</Text>
             </TouchableOpacity>
           </>
@@ -401,7 +400,7 @@ export default function DailyLogScreen({ navigation, route }: Props) {
               ) : (
                 <>
                   <View style={styles.cameraCircle}>
-                    <MaterialIcons name="photo-camera" size={34} color={Colors.outline} />
+                    <MaterialIcons name="photo-camera" size={34} color={colors.outline} />
                   </View>
                   <Text style={styles.addPhotoTitle}>新增今日照片</Text>
                   <Text style={styles.addPhotoSub}>記錄與 {petName} 的精彩時光</Text>
@@ -410,11 +409,11 @@ export default function DailyLogScreen({ navigation, route }: Props) {
             </TouchableOpacity>
 
             <View style={styles.noteCard}>
-              <MaterialIcons name="edit-note" size={20} color={Colors.outline} style={{ marginTop: 2 }} />
+              <MaterialIcons name="edit-note" size={20} color={colors.outline} style={{ marginTop: 2 }} />
               <TextInput
                 style={styles.noteInput}
                 placeholder="記錄今天的故事…（選填）"
-                placeholderTextColor={Colors.outlineVariant}
+                placeholderTextColor={colors.outlineVariant}
                 value={note}
                 onChangeText={setNote}
                 multiline
@@ -443,7 +442,7 @@ export default function DailyLogScreen({ navigation, route }: Props) {
 
             <TouchableOpacity style={styles.saveBtn} activeOpacity={0.85} onPress={handleSave} disabled={saving}>
               {saving
-                ? <ActivityIndicator color={Colors.onPrimary} />
+                ? <ActivityIndicator color={colors.onPrimary} />
                 : <Text style={styles.saveBtnLabel}>儲存今日日誌</Text>
               }
             </TouchableOpacity>
@@ -451,11 +450,11 @@ export default function DailyLogScreen({ navigation, route }: Props) {
             {justSaved && (
               <View style={styles.shareCard}>
                 <View style={styles.shareCardLeft}>
-                  <MaterialIcons name="check-circle" size={18} color={Colors.primary} />
+                  <MaterialIcons name="check-circle" size={18} color={colors.primary} />
                   <Text style={styles.shareCardText}>今日日誌已記錄！</Text>
                 </View>
                 <TouchableOpacity style={styles.shareBtn} onPress={handleShareToCommunity} activeOpacity={0.8}>
-                  <MaterialIcons name="people" size={15} color={Colors.onPrimary} />
+                  <MaterialIcons name="people" size={15} color={colors.onPrimary} />
                   <Text style={styles.shareBtnLabel}>分享到社群</Text>
                 </TouchableOpacity>
               </View>
@@ -464,7 +463,7 @@ export default function DailyLogScreen({ navigation, route }: Props) {
         ) : (
           /* ── Empty past day ── */
           <View style={styles.emptyWrap}>
-            <MaterialIcons name="photo-album" size={40} color={Colors.outlineVariant} />
+            <MaterialIcons name="photo-album" size={40} color={colors.outlineVariant} />
             <Text style={styles.emptyText}>這天沒有日誌紀錄</Text>
           </View>
         )}
@@ -474,8 +473,8 @@ export default function DailyLogScreen({ navigation, route }: Props) {
 }
 
 // ─── Styles ──────────────────────────────────────────────────────────────────
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background },
+const makeStyles = (c: ThemeColors) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: c.background },
 
   // Header
   header: {
@@ -489,7 +488,7 @@ const styles = StyleSheet.create({
     flex: 1,
     fontFamily: FontFamily.headlineBold,
     fontSize: FontSize.headlineMD,
-    color: Colors.onSurface,
+    color: c.onSurface,
     marginLeft: 4,
   },
 
@@ -498,7 +497,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingBottom: 10,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.surfaceVariant,
+    borderBottomColor: c.surfaceVariant,
   },
   calNavRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 6 },
   calNavBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
@@ -507,12 +506,12 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     fontFamily: FontFamily.headlineSemiBold,
     fontSize: FontSize.bodyMD,
-    color: Colors.onSurface,
+    color: c.onSurface,
   },
   calToggleBtn: {
     width: 32, height: 32, borderRadius: 10,
     alignItems: 'center', justifyContent: 'center',
-    backgroundColor: Colors.primaryFixed,
+    backgroundColor: c.primaryFixed,
   },
   // Week strip
   weekRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4 },
@@ -520,22 +519,22 @@ const styles = StyleSheet.create({
   dayName: {
     fontFamily: FontFamily.headlineMedium,
     fontSize: FontSize.labelSM,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
   },
-  dayNameActive: { color: Colors.primary },
+  dayNameActive: { color: c.primary },
   datePill: {
     width: 36, height: 40, borderRadius: 18,
     alignItems: 'center', justifyContent: 'center',
   },
-  datePillActive: { backgroundColor: Colors.primary },
+  datePillActive: { backgroundColor: c.primary },
   dateNum: {
     fontFamily: FontFamily.headlineSemiBold,
     fontSize: FontSize.bodyLG,
-    color: Colors.onSurface,
+    color: c.onSurface,
   },
-  dateNumActive: { color: Colors.onPrimary },
-  entryDot: { width: 5, height: 5, borderRadius: 3, backgroundColor: Colors.primaryContainer },
-  entryDotActive: { backgroundColor: Colors.onPrimary },
+  dateNumActive: { color: c.onPrimary },
+  entryDot: { width: 5, height: 5, borderRadius: 3, backgroundColor: c.primaryContainer },
+  entryDotActive: { backgroundColor: c.onPrimary },
   entryDotPlaceholder: { width: 5, height: 5 },
   // Month grid
   dowRow: { flexDirection: 'row', marginBottom: 2 },
@@ -543,21 +542,21 @@ const styles = StyleSheet.create({
     flex: 1, textAlign: 'center',
     fontFamily: FontFamily.headlineMedium,
     fontSize: FontSize.labelSM,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
   },
   monthGrid: { flexDirection: 'row', flexWrap: 'wrap' },
   monthCell: { width: `${(100 / 7).toFixed(4)}%` as any, alignItems: 'center', paddingVertical: 3 },
   monthDatePill: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
-  monthDatePillActive: { backgroundColor: Colors.primary },
+  monthDatePillActive: { backgroundColor: c.primary },
   monthDateNum: {
     fontFamily: FontFamily.headlineMedium,
     fontSize: FontSize.labelMD,
-    color: Colors.onSurface,
+    color: c.onSurface,
   },
-  monthDateNumActive: { color: Colors.onPrimary },
-  monthDateFuture: { color: Colors.outline },
-  monthEntryDot: { width: 4, height: 4, borderRadius: 2, backgroundColor: Colors.primaryContainer },
-  monthEntryDotActive: { backgroundColor: Colors.onPrimary },
+  monthDateNumActive: { color: c.onPrimary },
+  monthDateFuture: { color: c.outline },
+  monthEntryDot: { width: 4, height: 4, borderRadius: 2, backgroundColor: c.primaryContainer },
+  monthEntryDotActive: { backgroundColor: c.onPrimary },
   monthEntryDotPlaceholder: { width: 4, height: 4 },
 
   // Content
@@ -567,7 +566,7 @@ const styles = StyleSheet.create({
   sectionLabel: {
     fontFamily: FontFamily.headlineBold,
     fontSize: FontSize.bodyLG,
-    color: Colors.onSurface,
+    color: c.onSurface,
     marginBottom: 12,
   },
 
@@ -598,11 +597,11 @@ const styles = StyleSheet.create({
 
   // Diary card
   diaryCard: {
-    backgroundColor: Colors.surfaceContainerLowest,
+    backgroundColor: c.surfaceContainerLowest,
     borderRadius: 24,
     padding: 20,
     gap: 12,
-    shadowColor: Colors.primary,
+    shadowColor: c.primary,
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.07,
     shadowRadius: 16,
@@ -612,7 +611,7 @@ const styles = StyleSheet.create({
     width: 36,
     height: 4,
     borderRadius: 2,
-    backgroundColor: Colors.outlineVariant,
+    backgroundColor: c.outlineVariant,
     alignSelf: 'center',
     marginBottom: 4,
   },
@@ -624,33 +623,33 @@ const styles = StyleSheet.create({
   entryNum: {
     fontFamily: FontFamily.headlineMedium,
     fontSize: FontSize.labelSM,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
     letterSpacing: 1,
   },
 
   diaryTitle: {
     fontFamily: FontFamily.headlineBold,
     fontSize: FontSize.headlineMD,
-    color: Colors.onSurface,
+    color: c.onSurface,
     lineHeight: LineHeight.headlineMD,
   },
   moodRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   moodLabel: {
     fontFamily: FontFamily.headlineBold,
     fontSize: FontSize.labelSM,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
     letterSpacing: 1,
   },
   moodEmoji: { fontSize: 20 },
   diaryNote: {
     fontFamily: FontFamily.bodyMedium,
     fontSize: FontSize.bodyMD,
-    color: Colors.onSurface,
+    color: c.onSurface,
     lineHeight: LineHeight.bodyMD,
   },
   hashtagRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   hashtagChip: {
-    backgroundColor: Colors.surfaceContainerHigh,
+    backgroundColor: c.surfaceContainerHigh,
     borderRadius: 9999,
     paddingHorizontal: 14,
     paddingVertical: 6,
@@ -658,7 +657,7 @@ const styles = StyleSheet.create({
   hashtagText: {
     fontFamily: FontFamily.bodyMedium,
     fontSize: FontSize.labelMD,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
   },
 
   // Add photo
@@ -666,10 +665,10 @@ const styles = StyleSheet.create({
     height: 200,
     borderRadius: 20,
     overflow: 'hidden',
-    backgroundColor: Colors.surfaceContainerHigh,
+    backgroundColor: c.surfaceContainerHigh,
     borderWidth: 1.5,
     borderStyle: 'dashed',
-    borderColor: Colors.outlineVariant,
+    borderColor: c.outlineVariant,
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
@@ -679,7 +678,7 @@ const styles = StyleSheet.create({
     width: 72,
     height: 72,
     borderRadius: 36,
-    backgroundColor: Colors.surfaceContainerLowest,
+    backgroundColor: c.surfaceContainerLowest,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 4,
@@ -692,22 +691,22 @@ const styles = StyleSheet.create({
   addPhotoTitle: {
     fontFamily: FontFamily.headlineSemiBold,
     fontSize: FontSize.bodyMD,
-    color: Colors.onSurface,
+    color: c.onSurface,
   },
   addPhotoSub: {
     fontFamily: FontFamily.bodyMedium,
     fontSize: FontSize.labelMD,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
   },
 
   // Note input
   noteCard: {
     flexDirection: 'row',
     gap: 10,
-    backgroundColor: Colors.surfaceContainerLowest,
+    backgroundColor: c.surfaceContainerLowest,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: Colors.surfaceVariant,
+    borderColor: c.surfaceVariant,
     padding: 14,
     alignItems: 'flex-start',
     marginBottom: 16,
@@ -716,7 +715,7 @@ const styles = StyleSheet.create({
     flex: 1,
     fontFamily: FontFamily.bodyMedium,
     fontSize: FontSize.bodyMD,
-    color: Colors.onSurface,
+    color: c.onSurface,
     minHeight: 72,
   },
 
@@ -725,7 +724,7 @@ const styles = StyleSheet.create({
   moodSectionLabel: {
     fontFamily: FontFamily.headlineSemiBold,
     fontSize: FontSize.bodyMD,
-    color: Colors.onSurface,
+    color: c.onSurface,
     marginBottom: 12,
   },
   moodPicker: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
@@ -736,25 +735,25 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 9999,
-    backgroundColor: Colors.surfaceContainerHigh,
+    backgroundColor: c.surfaceContainerHigh,
     borderWidth: 1.5,
     borderColor: 'transparent',
   },
   moodChipOn: {
-    backgroundColor: Colors.primaryFixed,
-    borderColor: Colors.primary,
+    backgroundColor: c.primaryFixed,
+    borderColor: c.primary,
   },
   moodChipEmoji: { fontSize: 16 },
   moodChipLabel: {
     fontFamily: FontFamily.bodyMedium,
     fontSize: FontSize.labelMD,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
   },
-  moodChipLabelOn: { color: Colors.onPrimaryContainer },
+  moodChipLabelOn: { color: c.onPrimaryContainer },
 
   // Save
   saveBtn: {
-    backgroundColor: Colors.primary,
+    backgroundColor: c.primary,
     borderRadius: 9999,
     paddingVertical: 16,
     alignItems: 'center',
@@ -762,7 +761,7 @@ const styles = StyleSheet.create({
   saveBtnLabel: {
     fontFamily: FontFamily.headlineSemiBold,
     fontSize: FontSize.bodyMD,
-    color: Colors.onPrimary,
+    color: c.onPrimary,
   },
 
   // Share on existing entry
@@ -772,7 +771,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 8,
     borderWidth: 1.5,
-    borderColor: Colors.primary,
+    borderColor: c.primary,
     borderRadius: 9999,
     paddingVertical: 12,
     marginTop: 4,
@@ -780,7 +779,7 @@ const styles = StyleSheet.create({
   shareEntryBtnLabel: {
     fontFamily: FontFamily.headlineSemiBold,
     fontSize: FontSize.bodyMD,
-    color: Colors.primary,
+    color: c.primary,
   },
 
   // Share card
@@ -789,7 +788,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: Colors.primaryFixed,
+    backgroundColor: c.primaryFixed,
     borderRadius: 16,
     paddingHorizontal: 16,
     paddingVertical: 12,
@@ -802,13 +801,13 @@ const styles = StyleSheet.create({
   shareCardText: {
     fontFamily: FontFamily.headlineSemiBold,
     fontSize: FontSize.bodyMD,
-    color: Colors.primary,
+    color: c.primary,
   },
   shareBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    backgroundColor: Colors.primary,
+    backgroundColor: c.primary,
     borderRadius: 9999,
     paddingHorizontal: 14,
     paddingVertical: 8,
@@ -816,7 +815,7 @@ const styles = StyleSheet.create({
   shareBtnLabel: {
     fontFamily: FontFamily.headlineSemiBold,
     fontSize: FontSize.labelMD,
-    color: Colors.onPrimary,
+    color: c.onPrimary,
   },
 
   // Empty
@@ -828,6 +827,6 @@ const styles = StyleSheet.create({
   emptyText: {
     fontFamily: FontFamily.bodyMedium,
     fontSize: FontSize.bodyMD,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
   },
 });

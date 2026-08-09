@@ -8,9 +8,13 @@ import {
   ScrollView,
   Switch,
   TextInput,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
-import { Colors } from '../../constants/colors';
+import { ThemeColors } from '../../constants/themes';
+import { useTheme, useThemedStyles } from '../../context/ThemeContext';
 import { FontFamily, FontSize } from '../../constants/typography';
 import { CalendarEvent, Pet } from '../../types';
 
@@ -45,6 +49,8 @@ interface Props {
 // ─── TimePicker ───────────────────────────────────────────────────────────────
 
 function TimePicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const { colors } = useTheme();
+  const tpStyles = useThemedStyles(makeTpStyles);
   const match = value.match(/(\d+):(\d+)\s*(AM|PM)/i);
   const hour   = match ? parseInt(match[1], 10) : 9;
   const minute = match ? parseInt(match[2], 10) : 0;
@@ -58,11 +64,11 @@ function TimePicker({ value, onChange }: { value: string; onChange: (v: string) 
       {/* Hour */}
       <View style={tpStyles.spinCol}>
         <TouchableOpacity style={tpStyles.spinBtn} onPress={() => emit(hour === 12 ? 1 : hour + 1, minute, ampm)}>
-          <MaterialIcons name="keyboard-arrow-up" size={26} color={Colors.primary} />
+          <MaterialIcons name="keyboard-arrow-up" size={26} color={colors.primary} />
         </TouchableOpacity>
         <Text style={tpStyles.spinVal}>{String(hour).padStart(2, '0')}</Text>
         <TouchableOpacity style={tpStyles.spinBtn} onPress={() => emit(hour === 1 ? 12 : hour - 1, minute, ampm)}>
-          <MaterialIcons name="keyboard-arrow-down" size={26} color={Colors.primary} />
+          <MaterialIcons name="keyboard-arrow-down" size={26} color={colors.primary} />
         </TouchableOpacity>
       </View>
 
@@ -71,11 +77,11 @@ function TimePicker({ value, onChange }: { value: string; onChange: (v: string) 
       {/* Minute (5-min steps) */}
       <View style={tpStyles.spinCol}>
         <TouchableOpacity style={tpStyles.spinBtn} onPress={() => emit(hour, (minute + 5) % 60, ampm)}>
-          <MaterialIcons name="keyboard-arrow-up" size={26} color={Colors.primary} />
+          <MaterialIcons name="keyboard-arrow-up" size={26} color={colors.primary} />
         </TouchableOpacity>
         <Text style={tpStyles.spinVal}>{String(minute).padStart(2, '0')}</Text>
         <TouchableOpacity style={tpStyles.spinBtn} onPress={() => emit(hour, minute === 0 ? 55 : minute - 5, ampm)}>
-          <MaterialIcons name="keyboard-arrow-down" size={26} color={Colors.primary} />
+          <MaterialIcons name="keyboard-arrow-down" size={26} color={colors.primary} />
         </TouchableOpacity>
       </View>
 
@@ -98,6 +104,8 @@ function TimePicker({ value, onChange }: { value: string; onChange: (v: string) 
 // ─── DatePicker ───────────────────────────────────────────────────────────────
 
 function DatePicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const { colors } = useTheme();
+  const tpStyles = useThemedStyles(makeTpStyles);
   const currentYear = new Date().getFullYear();
   const parts = value ? value.split('-').map(Number) : [currentYear, 1, 1];
   const year = parts[0];
@@ -116,11 +124,11 @@ function DatePicker({ value, onChange }: { value: string; onChange: (v: string) 
     <View style={tpStyles.container}>
       <View style={tpStyles.spinCol}>
         <TouchableOpacity style={tpStyles.spinBtn} onPress={() => emit(year + 1, month, day)}>
-          <MaterialIcons name="keyboard-arrow-up" size={26} color={Colors.primary} />
+          <MaterialIcons name="keyboard-arrow-up" size={26} color={colors.primary} />
         </TouchableOpacity>
         <Text style={tpStyles.spinVal}>{year}</Text>
         <TouchableOpacity style={tpStyles.spinBtn} onPress={() => emit(Math.max(year - 1, currentYear), month, day)}>
-          <MaterialIcons name="keyboard-arrow-down" size={26} color={Colors.primary} />
+          <MaterialIcons name="keyboard-arrow-down" size={26} color={colors.primary} />
         </TouchableOpacity>
       </View>
 
@@ -128,11 +136,11 @@ function DatePicker({ value, onChange }: { value: string; onChange: (v: string) 
 
       <View style={tpStyles.spinCol}>
         <TouchableOpacity style={tpStyles.spinBtn} onPress={() => emit(year, month === 12 ? 1 : month + 1, day)}>
-          <MaterialIcons name="keyboard-arrow-up" size={26} color={Colors.primary} />
+          <MaterialIcons name="keyboard-arrow-up" size={26} color={colors.primary} />
         </TouchableOpacity>
         <Text style={tpStyles.spinVal}>{String(month).padStart(2, '0')}</Text>
         <TouchableOpacity style={tpStyles.spinBtn} onPress={() => emit(year, month === 1 ? 12 : month - 1, day)}>
-          <MaterialIcons name="keyboard-arrow-down" size={26} color={Colors.primary} />
+          <MaterialIcons name="keyboard-arrow-down" size={26} color={colors.primary} />
         </TouchableOpacity>
       </View>
 
@@ -140,11 +148,11 @@ function DatePicker({ value, onChange }: { value: string; onChange: (v: string) 
 
       <View style={tpStyles.spinCol}>
         <TouchableOpacity style={tpStyles.spinBtn} onPress={() => emit(year, month, day === maxDay ? 1 : day + 1)}>
-          <MaterialIcons name="keyboard-arrow-up" size={26} color={Colors.primary} />
+          <MaterialIcons name="keyboard-arrow-up" size={26} color={colors.primary} />
         </TouchableOpacity>
         <Text style={tpStyles.spinVal}>{String(day).padStart(2, '0')}</Text>
         <TouchableOpacity style={tpStyles.spinBtn} onPress={() => emit(year, month, day === 1 ? maxDay : day - 1)}>
-          <MaterialIcons name="keyboard-arrow-down" size={26} color={Colors.primary} />
+          <MaterialIcons name="keyboard-arrow-down" size={26} color={colors.primary} />
         </TouchableOpacity>
       </View>
     </View>
@@ -171,6 +179,9 @@ export default function AddEventModal({
   onClose,
   onSave,
 }: Props) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
+  const insets = useSafeAreaInsets();
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState<CategoryType>('vet');
@@ -240,9 +251,12 @@ export default function AddEventModal({
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={handleClose}>
-      <View style={styles.overlay}>
+      <KeyboardAvoidingView
+        style={styles.overlay}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
         <TouchableOpacity style={styles.dismiss} onPress={handleClose} activeOpacity={1} />
-        <View style={styles.sheet}>
+        <View style={[styles.sheet, { paddingBottom: insets.bottom + 20 }]}>
           <View style={styles.handle} />
 
           <View style={styles.header}>
@@ -251,7 +265,7 @@ export default function AddEventModal({
               <Text style={styles.headerDate}>{displayDate}</Text>
             </View>
             <TouchableOpacity onPress={handleClose} style={styles.closeBtn}>
-              <MaterialIcons name="close" size={22} color={Colors.onSurface} />
+              <MaterialIcons name="close" size={22} color={colors.onSurface} />
             </TouchableOpacity>
           </View>
 
@@ -271,11 +285,11 @@ export default function AddEventModal({
                 style={[styles.petChip, petId === 'all' && { backgroundColor: allPetsColor, borderColor: allPetsColor }]}
                 onPress={() => setPetId('all')}
               >
-                <MaterialIcons name="pets" size={14} color={petId === 'all' ? Colors.onPrimary : Colors.onSurface} />
+                <MaterialIcons name="pets" size={14} color={petId === 'all' ? colors.onPrimary : colors.onSurface} />
                 <Text style={[styles.petChipLabel, petId === 'all' && styles.chipLabelActive]}>全部</Text>
               </TouchableOpacity>
               {pets.map((pet) => {
-                const color = petColorMap[pet.id] ?? Colors.primary;
+                const color = petColorMap[pet.id] ?? colors.primary;
                 const selected = petId === pet.id;
                 return (
                   <TouchableOpacity
@@ -283,7 +297,7 @@ export default function AddEventModal({
                     style={[styles.petChip, selected && { backgroundColor: color, borderColor: color }]}
                     onPress={() => setPetId(pet.id)}
                   >
-                    <View style={[styles.petDot, { backgroundColor: selected ? Colors.onPrimary : color }]} />
+                    <View style={[styles.petDot, { backgroundColor: selected ? colors.onPrimary : color }]} />
                     <Text style={[styles.petChipLabel, selected && styles.chipLabelActive]}>{pet.name}</Text>
                   </TouchableOpacity>
                 );
@@ -297,7 +311,7 @@ export default function AddEventModal({
               value={title}
               onChangeText={setTitle}
               placeholder="例：定期健檢"
-              placeholderTextColor={Colors.outlineVariant}
+              placeholderTextColor={colors.outlineVariant}
             />
 
             {/* Description */}
@@ -307,7 +321,7 @@ export default function AddEventModal({
               value={description}
               onChangeText={setDescription}
               placeholder="更多說明..."
-              placeholderTextColor={Colors.outlineVariant}
+              placeholderTextColor={colors.outlineVariant}
               multiline
               numberOfLines={3}
             />
@@ -324,7 +338,7 @@ export default function AddEventModal({
                   <MaterialIcons
                     name={c.icon}
                     size={15}
-                    color={category === c.key ? Colors.onPrimary : Colors.onSurfaceVariant}
+                    color={category === c.key ? colors.onPrimary : colors.onSurfaceVariant}
                   />
                   <Text style={[styles.chipLabel, category === c.key && styles.chipLabelActive]}>{c.label}</Text>
                 </TouchableOpacity>
@@ -337,9 +351,9 @@ export default function AddEventModal({
               <Switch
                 value={allDay}
                 onValueChange={setAllDay}
-                trackColor={{ false: Colors.surfaceContainerHigh, true: Colors.primaryFixed }}
-                thumbColor={allDay ? Colors.primary : Colors.outline}
-                ios_backgroundColor={Colors.surfaceContainerHigh}
+                trackColor={{ false: colors.surfaceContainerHigh, true: colors.primaryFixed }}
+                thumbColor={allDay ? colors.primary : colors.outline}
+                ios_backgroundColor={colors.surfaceContainerHigh}
               />
             </View>
 
@@ -383,9 +397,9 @@ export default function AddEventModal({
                         );
                       }
                     }}
-                    trackColor={{ false: Colors.surfaceContainerHigh, true: Colors.primaryFixed }}
-                    thumbColor={repeatUntilEnabled ? Colors.primary : Colors.outline}
-                    ios_backgroundColor={Colors.surfaceContainerHigh}
+                    trackColor={{ false: colors.surfaceContainerHigh, true: colors.primaryFixed }}
+                    thumbColor={repeatUntilEnabled ? colors.primary : colors.outline}
+                    ios_backgroundColor={colors.surfaceContainerHigh}
                   />
                 </View>
                 {repeatUntilEnabled && (
@@ -408,12 +422,12 @@ export default function AddEventModal({
             <Text style={styles.saveBtnLabel}>儲存提醒</Text>
           </TouchableOpacity>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (c: ThemeColors) => StyleSheet.create({
   overlay: {
     flex: 1,
     justifyContent: 'flex-end',
@@ -421,18 +435,17 @@ const styles = StyleSheet.create({
   },
   dismiss: { flex: 1 },
   sheet: {
-    backgroundColor: Colors.surface,
+    backgroundColor: c.surface,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     paddingHorizontal: 20,
-    paddingBottom: 32,
     maxHeight: '92%',
   },
   handle: {
     width: 40,
     height: 4,
     borderRadius: 2,
-    backgroundColor: Colors.outlineVariant,
+    backgroundColor: c.outlineVariant,
     alignSelf: 'center',
     marginTop: 12,
     marginBottom: 4,
@@ -446,12 +459,12 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontFamily: FontFamily.headlineSemiBold,
     fontSize: FontSize.bodyLG,
-    color: Colors.onSurface,
+    color: c.onSurface,
   },
   headerDate: {
     fontFamily: FontFamily.bodyMedium,
     fontSize: FontSize.labelMD,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
     marginTop: 2,
   },
   closeBtn: { padding: 4 },
@@ -459,7 +472,7 @@ const styles = StyleSheet.create({
   fieldLabel: {
     fontFamily: FontFamily.headlineSemiBold,
     fontSize: FontSize.labelMD,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
     marginTop: 16,
     marginBottom: 8,
   },
@@ -476,23 +489,23 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: 9999,
     borderWidth: 1.5,
-    borderColor: Colors.outlineVariant,
-    backgroundColor: Colors.surface,
+    borderColor: c.outlineVariant,
+    backgroundColor: c.surface,
   },
   petChipLabel: {
     fontFamily: FontFamily.headlineMedium,
     fontSize: FontSize.labelMD,
-    color: Colors.onSurface,
+    color: c.onSurface,
   },
   petDot: { width: 8, height: 8, borderRadius: 4 },
   input: {
-    backgroundColor: Colors.surfaceContainerHigh,
+    backgroundColor: c.surfaceContainerHigh,
     borderRadius: 12,
     paddingHorizontal: 14,
     paddingVertical: 12,
     fontFamily: FontFamily.bodyMedium,
     fontSize: FontSize.bodyMD,
-    color: Colors.onSurface,
+    color: c.onSurface,
   },
   inputMulti: {
     minHeight: 72,
@@ -512,19 +525,19 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: 9999,
     borderWidth: 1.5,
-    borderColor: Colors.outlineVariant,
-    backgroundColor: Colors.surface,
+    borderColor: c.outlineVariant,
+    backgroundColor: c.surface,
   },
   chipActive: {
-    backgroundColor: Colors.primary,
-    borderColor: Colors.primary,
+    backgroundColor: c.primary,
+    borderColor: c.primary,
   },
   chipLabel: {
     fontFamily: FontFamily.headlineMedium,
     fontSize: FontSize.labelMD,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
   },
-  chipLabelActive: { color: Colors.onPrimary },
+  chipLabelActive: { color: c.onPrimary },
   toggleRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -534,30 +547,30 @@ const styles = StyleSheet.create({
   toggleLabel: {
     fontFamily: FontFamily.headlineSemiBold,
     fontSize: FontSize.labelMD,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
   },
   saveBtn: {
-    backgroundColor: Colors.primary,
+    backgroundColor: c.primary,
     borderRadius: 9999,
     paddingVertical: 15,
     alignItems: 'center',
     marginTop: 12,
   },
-  saveBtnDisabled: { backgroundColor: Colors.outlineVariant },
+  saveBtnDisabled: { backgroundColor: c.outlineVariant },
   saveBtnLabel: {
     fontFamily: FontFamily.headlineSemiBold,
     fontSize: FontSize.bodyMD,
-    color: Colors.onPrimary,
+    color: c.onPrimary,
   },
 });
 
-const tpStyles = StyleSheet.create({
+const makeTpStyles = (c: ThemeColors) => StyleSheet.create({
   container: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 16,
-    backgroundColor: Colors.surfaceContainerHigh,
+    backgroundColor: c.surfaceContainerHigh,
     borderRadius: 16,
     paddingVertical: 10,
     paddingHorizontal: 16,
@@ -572,14 +585,14 @@ const tpStyles = StyleSheet.create({
   spinVal: {
     fontFamily: FontFamily.headlineBold,
     fontSize: FontSize.headlineMD,
-    color: Colors.onSurface,
+    color: c.onSurface,
     minWidth: 48,
     textAlign: 'center',
   },
   colon: {
     fontFamily: FontFamily.headlineBold,
     fontSize: FontSize.headlineMD,
-    color: Colors.onSurface,
+    color: c.onSurface,
     marginBottom: 4,
   },
   ampmCol: {
@@ -590,17 +603,17 @@ const tpStyles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 9,
     borderRadius: 9999,
-    backgroundColor: Colors.surfaceContainerLowest,
+    backgroundColor: c.surfaceContainerLowest,
   },
   ampmBtnActive: {
-    backgroundColor: Colors.primary,
+    backgroundColor: c.primary,
   },
   ampmLabel: {
     fontFamily: FontFamily.headlineSemiBold,
     fontSize: FontSize.labelMD,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
   },
   ampmLabelActive: {
-    color: Colors.onPrimary,
+    color: c.onPrimary,
   },
 });

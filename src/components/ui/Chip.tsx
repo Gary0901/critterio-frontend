@@ -1,6 +1,7 @@
 import React from 'react';
 import { Text, StyleSheet, TouchableOpacity } from 'react-native';
-import { Colors } from '../../constants/colors';
+import { ThemeColors } from '../../constants/themes';
+import { useThemedStyles } from '../../context/ThemeContext';
 import { FontFamily, FontSize } from '../../constants/typography';
 
 interface Props {
@@ -10,6 +11,7 @@ interface Props {
 }
 
 export default function Chip({ label, selected = false, onPress }: Props) {
+  const styles = useThemedStyles(makeStyles);
   return (
     <TouchableOpacity
       onPress={onPress}
@@ -21,22 +23,22 @@ export default function Chip({ label, selected = false, onPress }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (c: ThemeColors) => StyleSheet.create({
   chip: {
     paddingHorizontal: 12,
     paddingVertical: 4,
     borderRadius: 9999,
-    backgroundColor: `${Colors.secondary}1A`,
+    backgroundColor: `${c.secondary}1A`,
   },
   selected: {
-    backgroundColor: Colors.secondaryContainer,
+    backgroundColor: c.secondaryContainer,
   },
   text: {
     fontFamily: FontFamily.headlineMedium,
     fontSize: FontSize.labelSM,
-    color: Colors.secondary,
+    color: c.secondary,
   },
   selectedText: {
-    color: Colors.onSecondaryContainer,
+    color: c.onSecondaryContainer,
   },
 });

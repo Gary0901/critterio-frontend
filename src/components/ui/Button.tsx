@@ -7,7 +7,8 @@ import {
   ViewStyle,
   TextStyle,
 } from 'react-native';
-import { Colors } from '../../constants/colors';
+import { ThemeColors } from '../../constants/themes';
+import { useTheme, useThemedStyles } from '../../context/ThemeContext';
 import { FontFamily, FontSize } from '../../constants/typography';
 
 type Variant = 'primary' | 'outline' | 'ghost';
@@ -33,15 +34,20 @@ export default function Button({
   textStyle,
   icon,
 }: Props) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   return (
     <TouchableOpacity
       onPress={onPress}
       activeOpacity={0.85}
       disabled={disabled || loading}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ disabled: disabled || loading, busy: loading }}
       style={[styles.base, styles[variant], disabled && styles.disabled, style]}
     >
       {loading ? (
-        <ActivityIndicator color={variant === 'primary' ? Colors.onPrimary : Colors.primary} />
+        <ActivityIndicator color={variant === 'primary' ? colors.onPrimary : colors.primary} />
       ) : (
         <>
           {icon}
@@ -52,7 +58,7 @@ export default function Button({
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (c: ThemeColors) => StyleSheet.create({
   base: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -63,15 +69,15 @@ const styles = StyleSheet.create({
     borderRadius: 9999,
   },
   primary: {
-    backgroundColor: Colors.primary,
+    backgroundColor: c.primary,
   },
   outline: {
     backgroundColor: 'transparent',
     borderWidth: 1.5,
-    borderColor: Colors.outline,
+    borderColor: c.outline,
   },
   ghost: {
-    backgroundColor: Colors.surfaceContainerLow,
+    backgroundColor: c.surfaceContainerLow,
   },
   disabled: {
     opacity: 0.5,
@@ -81,12 +87,12 @@ const styles = StyleSheet.create({
     fontFamily: FontFamily.headlineSemiBold,
   },
   primaryText: {
-    color: Colors.onPrimary,
+    color: c.onPrimary,
   },
   outlineText: {
-    color: Colors.onSurface,
+    color: c.onSurface,
   },
   ghostText: {
-    color: Colors.onSurface,
+    color: c.onSurface,
   },
 });

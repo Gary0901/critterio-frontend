@@ -14,7 +14,8 @@ import { RouteProp } from '@react-navigation/native';
 import { RootStackParamList } from '../../types/navigation';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
-import { Colors } from '../../constants/colors';
+import { ThemeColors } from '../../constants/themes';
+import { useTheme, useThemedStyles } from '../../context/ThemeContext';
 import { FontFamily, FontSize } from '../../constants/typography';
 import client from '../../api/client';
 
@@ -30,6 +31,8 @@ type Props = {
 };
 
 export default function ResetPasswordScreen({ navigation, route }: Props) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const { token } = route.params;
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
@@ -80,7 +83,7 @@ export default function ResetPasswordScreen({ navigation, route }: Props) {
         {done ? (
           <View style={styles.form}>
             <View style={styles.successIcon}>
-              <MaterialIcons name="check-circle" size={36} color={Colors.secondary} />
+              <MaterialIcons name="check-circle" size={36} color={colors.secondary} />
             </View>
             <Text style={styles.successTitle}>密碼重設成功！</Text>
             <Text style={styles.successDesc}>請使用新密碼重新登入。</Text>
@@ -108,7 +111,7 @@ export default function ResetPasswordScreen({ navigation, route }: Props) {
                       <MaterialIcons
                         name={met ? 'check-circle' : 'radio-button-unchecked'}
                         size={16}
-                        color={met ? Colors.secondary : Colors.outline}
+                        color={met ? colors.secondary : colors.outline}
                       />
                       <Text style={[styles.ruleText, met && styles.ruleTextMet]}>
                         {rule.label}
@@ -143,10 +146,10 @@ export default function ResetPasswordScreen({ navigation, route }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (c: ThemeColors) => StyleSheet.create({
   container: {
     flexGrow: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: c.background,
     alignItems: 'center',
     paddingHorizontal: 20,
     paddingTop: 80,
@@ -156,15 +159,15 @@ const styles = StyleSheet.create({
   logo: {
     fontFamily: FontFamily.brand,
     fontSize: FontSize.headlineMD + 4,
-    color: Colors.primary,
+    color: c.primary,
   },
   form: {
     width: '100%',
-    backgroundColor: Colors.surfaceContainerLowest,
+    backgroundColor: c.surfaceContainerLowest,
     borderRadius: 24,
     padding: 24,
     gap: 16,
-    shadowColor: Colors.primary,
+    shadowColor: c.primary,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.06,
     shadowRadius: 16,
@@ -173,16 +176,16 @@ const styles = StyleSheet.create({
   formTitle: {
     fontFamily: FontFamily.headlineBold,
     fontSize: FontSize.headlineMD,
-    color: Colors.onSurface,
+    color: c.onSurface,
   },
   formSub: {
     fontFamily: FontFamily.bodyMedium,
     fontSize: FontSize.bodyMD,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
     lineHeight: 22,
   },
   rulesBox: {
-    backgroundColor: Colors.surfaceContainerLow,
+    backgroundColor: c.surfaceContainerLow,
     borderRadius: 12,
     padding: 12,
     gap: 8,
@@ -195,21 +198,21 @@ const styles = StyleSheet.create({
   ruleText: {
     fontFamily: FontFamily.bodyMedium,
     fontSize: FontSize.labelMD,
-    color: Colors.outline,
+    color: c.outline,
   },
   ruleTextMet: {
-    color: Colors.secondary,
+    color: c.secondary,
   },
   errorText: {
     fontFamily: FontFamily.bodyMedium,
     fontSize: FontSize.labelSM,
-    color: Colors.error,
+    color: c.error,
   },
   successIcon: {
     width: 72,
     height: 72,
     borderRadius: 36,
-    backgroundColor: Colors.secondaryContainer,
+    backgroundColor: c.secondaryContainer,
     alignItems: 'center',
     justifyContent: 'center',
     alignSelf: 'center',
@@ -217,18 +220,18 @@ const styles = StyleSheet.create({
   successTitle: {
     fontFamily: FontFamily.headlineBold,
     fontSize: FontSize.headlineMD,
-    color: Colors.onSurface,
+    color: c.onSurface,
     textAlign: 'center',
   },
   successDesc: {
     fontFamily: FontFamily.bodyMedium,
     fontSize: FontSize.bodyMD,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
     textAlign: 'center',
   },
   loginLink: {
     fontFamily: FontFamily.headlineMedium,
     fontSize: FontSize.labelMD,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
   },
 });

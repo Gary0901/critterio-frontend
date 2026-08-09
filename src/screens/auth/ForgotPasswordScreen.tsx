@@ -15,7 +15,8 @@ import { RootStackParamList } from '../../types/navigation';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
 import HamsterLoading from '../../components/ui/HamsterLoading';
-import { Colors } from '../../constants/colors';
+import { ThemeColors } from '../../constants/themes';
+import { useTheme, useThemedStyles } from '../../context/ThemeContext';
 import { FontFamily, FontSize } from '../../constants/typography';
 import client from '../../api/client';
 
@@ -26,6 +27,8 @@ type Props = {
 };
 
 export default function ForgotPasswordScreen({ navigation }: Props) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -63,7 +66,7 @@ export default function ForgotPasswordScreen({ navigation }: Props) {
       >
         {/* Back button */}
         <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
-          <MaterialIcons name="arrow-back" size={20} color={Colors.primary} />
+          <MaterialIcons name="arrow-back" size={20} color={colors.primary} />
           <Text style={styles.backText}>返回登入</Text>
         </TouchableOpacity>
 
@@ -75,7 +78,7 @@ export default function ForgotPasswordScreen({ navigation }: Props) {
           /* ── Success state ── */
           <View style={styles.form}>
             <View style={styles.successIcon}>
-              <MaterialIcons name="mark-email-read" size={36} color={Colors.secondary} />
+              <MaterialIcons name="mark-email-read" size={36} color={colors.secondary} />
             </View>
             <Text style={styles.successTitle}>請查看您的收件匣！</Text>
             <Text style={styles.successDesc}>
@@ -130,7 +133,7 @@ export default function ForgotPasswordScreen({ navigation }: Props) {
         <View style={styles.loadingOverlay}>
           <HamsterLoading
             hamsterSource={require('../../../photo/loading.png')}
-            color={Colors.primary}
+            color={colors.primary}
             size={180}
           />
         </View>
@@ -139,10 +142,10 @@ export default function ForgotPasswordScreen({ navigation }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (c: ThemeColors) => StyleSheet.create({
   container: {
     flexGrow: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: c.background,
     alignItems: 'center',
     paddingHorizontal: 20,
     paddingTop: 60,
@@ -158,28 +161,28 @@ const styles = StyleSheet.create({
   backText: {
     fontFamily: FontFamily.headlineMedium,
     fontSize: FontSize.labelMD,
-    color: Colors.primary,
+    color: c.primary,
   },
   logo: {
     fontFamily: FontFamily.brand,
     fontSize: FontSize.headlineMD + 4,
-    color: Colors.primary,
+    color: c.primary,
     marginBottom: 8,
   },
   tagline: {
     fontFamily: FontFamily.bodyMedium,
     fontSize: FontSize.bodyMD,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
     marginBottom: 32,
     textAlign: 'center',
   },
   form: {
     width: '100%',
-    backgroundColor: Colors.surfaceContainerLowest,
+    backgroundColor: c.surfaceContainerLowest,
     borderRadius: 24,
     padding: 24,
     gap: 16,
-    shadowColor: Colors.primary,
+    shadowColor: c.primary,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.06,
     shadowRadius: 16,
@@ -189,12 +192,12 @@ const styles = StyleSheet.create({
   formTitle: {
     fontFamily: FontFamily.headlineBold,
     fontSize: FontSize.headlineMD,
-    color: Colors.onSurface,
+    color: c.onSurface,
   },
   formSub: {
     fontFamily: FontFamily.bodyMedium,
     fontSize: FontSize.bodyMD,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
     lineHeight: 22,
   },
   // Success state
@@ -202,7 +205,7 @@ const styles = StyleSheet.create({
     width: 72,
     height: 72,
     borderRadius: 36,
-    backgroundColor: Colors.secondaryContainer,
+    backgroundColor: c.secondaryContainer,
     alignItems: 'center',
     justifyContent: 'center',
     alignSelf: 'center',
@@ -210,34 +213,34 @@ const styles = StyleSheet.create({
   successTitle: {
     fontFamily: FontFamily.headlineBold,
     fontSize: FontSize.headlineMD,
-    color: Colors.onSurface,
+    color: c.onSurface,
     textAlign: 'center',
   },
   successDesc: {
     fontFamily: FontFamily.bodyMedium,
     fontSize: FontSize.bodyMD,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
     textAlign: 'center',
     lineHeight: 22,
   },
   successEmail: {
     fontFamily: FontFamily.bodySemiBold,
-    color: Colors.onSurface,
+    color: c.onSurface,
   },
   successHint: {
     fontFamily: FontFamily.bodyMedium,
     fontSize: FontSize.labelSM,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
     textAlign: 'center',
   },
   successHintHighlight: {
     fontFamily: FontFamily.headlineBold,
-    color: Colors.primary,
+    color: c.primary,
   },
   retryText: {
     fontFamily: FontFamily.headlineMedium,
     fontSize: FontSize.labelMD,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
     textAlign: 'center',
   },
   loginRow: {
@@ -247,12 +250,12 @@ const styles = StyleSheet.create({
   loginText: {
     fontFamily: FontFamily.bodyMedium,
     fontSize: FontSize.bodyMD,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
   },
   loginLink: {
     fontFamily: FontFamily.bodySemiBold,
     fontSize: FontSize.bodyMD,
-    color: Colors.primary,
+    color: c.primary,
   },
   loadingOverlay: {
     flex: 1,

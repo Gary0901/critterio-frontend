@@ -4,50 +4,104 @@ import {
   Text,
   StyleSheet,
   Image,
-  Dimensions,
+  useWindowDimensions,
   Animated,
   Easing,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialIcons } from '@expo/vector-icons';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../types/navigation';
 import Button from '../../components/ui/Button';
-import { Colors } from '../../constants/colors';
+import { ThemeColors } from '../../constants/themes';
+import { useTheme, useThemedStyles } from '../../context/ThemeContext';
 import { FontFamily, FontSize } from '../../constants/typography';
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'Welcome'>;
 };
 
-const { width } = Dimensions.get('window');
 const H_PAD = 24;
-const AVAILABLE_W = width - H_PAD * 2;
+// 平板 / iPad 分割視窗上不讓內容無限拉寬，維持手機的閱讀寬度
+const MAX_CONTENT_W = 520;
+// 低於這個高度視為小螢幕（iPhone SE 之類），全部間距與圓形都縮一號
+const COMPACT_H = 700;
 
-// Circle dimensions
-const CIRCLE_L = Math.round(AVAILABLE_W * 0.58);
-const CIRCLE_R = Math.round(AVAILABLE_W * 0.50);
-const OVERLAP   = Math.round(AVAILABLE_W * 0.16);
-const DROP_Y    = Math.round(AVAILABLE_W * 0.18);
-const COLLAGE_H = Math.max(CIRCLE_L, DROP_Y + CIRCLE_R) + 8;
+// 依視窗尺寸算出雙圓拼貼的所有幾何值。
+// 圓的大小同時受寬度與高度限制，避免小螢幕上把下方按鈕擠出畫面。
+function getCollageLayout(width: number, height: number) {
+  const contentW = Math.min(width, MAX_CONTENT_W) - H_PAD * 2;
 
-// Horizontal centering of the two-circle group
-const SPAN    = CIRCLE_L + CIRCLE_R - OVERLAP;
-const START_X = (AVAILABLE_W - SPAN) / 2;
-const L_LEFT  = START_X;
-const R_LEFT  = START_X + CIRCLE_L - OVERLAP;
+  const circleL = Math.round(Math.min(contentW * 0.58, height * 0.26));
+  const circleR = Math.round(circleL * 0.86);
+  const overlap = Math.round(circleL * 0.28);
+  const dropY   = Math.round(circleL * 0.31);
+  const collageH = Math.max(circleL, dropY + circleR) + 8;
+
+  // 讓雙圓整體在 contentW 內置中
+  const span   = circleL + circleR - overlap;
+  const startX = (contentW - span) / 2;
+
+  return {
+    contentW,
+    circleL,
+    circleR,
+    collageH,
+    lLeft: startX,
+    rLeft: startX + circleL - overlap,
+    dropY,
+  };
+}
 
 
+// Metro 打包工具要求 require() 路徑必須寫死，不能動態組合檔名，
+// 所以 14 張照片要先全部各自 require 好，再依星期幾挑當天那兩張
 const photos = {
-  w1: require('../../../photo/welcome1.jpg'),
-  w2: require('../../../photo/welcome2.jpg'),
+  w1:  require('../../../photo/welcome1.jpg'),
+  w2:  require('../../../photo/welcome2.jpg'),
+  w3:  require('../../../photo/welcome3.jpg'),
+  w4:  require('../../../photo/welcome4.jpg'),
+  w5:  require('../../../photo/welcome5.jpg'),
+  w6:  require('../../../photo/welcome6.jpg'),
+  w7:  require('../../../photo/welcome7.jpg'),
+  w8:  require('../../../photo/welcome8.jpg'),
+  w9:  require('../../../photo/welcome9.jpg'),
+  w10: require('../../../photo/welcome10.jpg'),
+  w11: require('../../../photo/welcome11.jpg'),
+  w12: require('../../../photo/welcome12.jpg'),
+  w13: require('../../../photo/welcome13.jpg'),
+  w14: require('../../../photo/welcome14.jpg'),
 };
+
+// index 0 = 星期日（Date.getDay() 的順序），每天一組（左圓、右圓）；
+// 想改哪天配哪兩張，調整這個陣列裡的順序即可
+const DAILY_PHOTO_PAIRS: [any, any][] = [
+  [photos.w1,  photos.w2],   // 日
+  [photos.w3,  photos.w4],   // 一
+  [photos.w5,  photos.w6],   // 二
+  [photos.w7,  photos.w8],   // 三
+  [photos.w9,  photos.w10],  // 四
+  [photos.w11, photos.w12],  // 五
+  [photos.w13, photos.w14],  // 六
+];
 
 const ENTER_DURATION = 1520;
 const ENTER_STAGGER  = 110;
 const ENTER_SLIDE    = 30;
 
+// 測試用：改成 0-6 可以強制預覽該天的照片組合（0=日...6=六），測完記得改回 null 再存檔
+const TEST_DAY_OVERRIDE: number | null = null;
+
 export default function WelcomeScreen({ navigation }: Props) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
+  const { width, height } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const compact = height < COMPACT_H;
+  const L = getCollageLayout(width, height);
+
+  const [todayW1, todayW2] = DAILY_PHOTO_PAIRS[TEST_DAY_OVERRIDE ?? new Date().getDay()];
   const breathe = useRef(new Animated.Value(0)).current;
   // 4 entrance anims: logo, collage, text, buttons
   const enters = useRef([0, 1, 2, 3].map(() => new Animated.Value(0))).current;
@@ -95,7 +149,7 @@ export default function WelcomeScreen({ navigation }: Props) {
       />
       {/* Peach → semi-transparent white → fully transparent, flowers show through */}
       <LinearGradient
-        colors={[Colors.primaryFixed, Colors.primaryFixed, 'rgba(255,248,245,0.88)', 'rgba(255,248,245,0.30)', 'rgba(255,248,245,0)']}
+        colors={[colors.primaryFixed, colors.primaryFixed, 'rgba(255,248,245,0.88)', 'rgba(255,248,245,0.30)', 'rgba(255,248,245,0)']}
         locations={[0, 0.32, 0.54, 0.76, 1.0]}
         style={StyleSheet.absoluteFill}
         start={{ x: 0.5, y: 0 }}
@@ -103,42 +157,44 @@ export default function WelcomeScreen({ navigation }: Props) {
       />
 
       {/* Logo */}
-      <Animated.View style={[styles.logoRow, enterStyle(0)]}>
-        <Text style={styles.logo}>Critterio</Text>
+      <Animated.View style={[styles.logoRow, { paddingTop: insets.top + 16, marginBottom: compact ? 16 : 28 }, enterStyle(0)]}>
+        <Text style={styles.logo} maxFontSizeMultiplier={1.3}>Critterio</Text>
       </Animated.View>
 
       {/* Two-circle photo collage */}
-      <Animated.View style={[styles.collage, enterStyle(1)]}>
+      <Animated.View style={[styles.collage, { height: L.collageH, width: L.contentW }, enterStyle(1)]}>
         {/* Right circle — behind, breathes downward */}
         <Animated.View style={[styles.circleWrap, {
-          width: CIRCLE_R, height: CIRCLE_R, borderRadius: CIRCLE_R / 2,
-          left: R_LEFT, top: DROP_Y,
+          width: L.circleR, height: L.circleR, borderRadius: L.circleR / 2,
+          left: L.rLeft, top: L.dropY,
           transform: [{ translateY: rightY }],
         }]}>
-          <Image source={photos.w2} style={styles.circleImg} resizeMode="cover" />
+          <Image source={todayW2} style={styles.circleImg} resizeMode="cover" />
         </Animated.View>
 
         {/* Left circle — front, breathes upward */}
         <Animated.View style={[styles.circleWrap, {
-          width: CIRCLE_L, height: CIRCLE_L, borderRadius: CIRCLE_L / 2,
-          left: L_LEFT, top: 0,
+          width: L.circleL, height: L.circleL, borderRadius: L.circleL / 2,
+          left: L.lLeft, top: 0,
           transform: [{ translateY: leftY }],
         }]}>
-          <Image source={photos.w1} style={styles.circleImg} resizeMode="cover" />
+          <Image source={todayW1} style={styles.circleImg} resizeMode="cover" />
         </Animated.View>
       </Animated.View>
 
       {/* Headline */}
-      <Animated.View style={[styles.textSection, enterStyle(2)]}>
-        <Text style={styles.headline}>歡迎來到 <Text style={styles.headlineBrand}>Critterio</Text></Text>
-        <Text style={styles.sub}>您的寵物照護與社群全方位夥伴。</Text>
+      <Animated.View style={[styles.textSection, { marginTop: compact ? 20 : 32 }, enterStyle(2)]}>
+        <Text style={styles.headline} maxFontSizeMultiplier={1.3} accessibilityRole="header">
+          歡迎來到 <Text style={[styles.headlineBrand, compact && { fontSize: 36 }]}>Critterio</Text>
+        </Text>
+        <Text style={styles.sub} maxFontSizeMultiplier={1.4}>您的寵物照護與社群全方位夥伴。</Text>
       </Animated.View>
 
-      {/* Spacer */}
-      <View style={{ height: 32 }} />
+      {/* 把 CTA 推到畫面底部；小螢幕上會自動壓到最小值 */}
+      <View style={{ flex: 1, minHeight: 24 }} />
 
       {/* CTA buttons */}
-      <Animated.View style={[styles.actions, enterStyle(3)]}>
+      <Animated.View style={[styles.actions, { paddingBottom: insets.bottom + 20 }, enterStyle(3)]}>
         <Button
           label="立即開始 →"
           onPress={() => navigation.navigate('Onboarding')}
@@ -148,7 +204,7 @@ export default function WelcomeScreen({ navigation }: Props) {
           label="登入"
           onPress={() => navigation.navigate('Login')}
           variant="outline"
-          style={styles.mainBtn}
+          style={styles.loginBtn}
         />
         <View style={styles.joinRow}>
           <View style={styles.avatarStack}>
@@ -166,36 +222,24 @@ export default function WelcomeScreen({ navigation }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background },
+const makeStyles = (c: ThemeColors) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: c.background },
 
   logoRow: {
-    paddingTop: 64,
+    alignSelf: 'center',
+    width: '100%',
+    maxWidth: MAX_CONTENT_W,
     paddingHorizontal: H_PAD,
-    marginBottom: 28,
   },
   logo: {
     fontFamily: FontFamily.brand,
     fontSize: 32,
-    color: Colors.primary,
+    lineHeight: 40,
+    color: c.primary,
   },
 
   collage: {
-    height: COLLAGE_H,
-    marginHorizontal: H_PAD,
-  },
-
-  decoTR: {
-    position: 'absolute',
-    right: 0,
-    top: 0,
-    opacity: 0.65,
-  },
-  decoBL: {
-    position: 'absolute',
-    left: 0,
-    bottom: 4,
-    opacity: 0.65,
+    alignSelf: 'center',
   },
 
   circleWrap: {
@@ -210,7 +254,9 @@ const styles = StyleSheet.create({
   },
 
   textSection: {
-    marginTop: 32,
+    alignSelf: 'center',
+    width: '100%',
+    maxWidth: MAX_CONTENT_W,
     alignItems: 'center',
     gap: 6,
     paddingHorizontal: H_PAD,
@@ -218,29 +264,38 @@ const styles = StyleSheet.create({
   headline: {
     fontFamily: FontFamily.headlineBold,
     fontSize: FontSize.headlineLG,
-    color: Colors.onSurface,
+    // 內嵌的 42px 品牌字比本文大，行高要吃得下，否則 Android 上會被裁掉上緣
+    lineHeight: 52,
+    color: c.onSurface,
     textAlign: 'center',
   },
   headlineBrand: {
     fontFamily: FontFamily.brand,
     fontSize: 42,
-    color: Colors.primary,
+    color: c.primary,
   },
   sub: {
     fontFamily: FontFamily.bodyMedium,
     fontSize: FontSize.bodyMD,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
     textAlign: 'center',
   },
 
   actions: {
+    alignSelf: 'center',
+    width: '100%',
+    maxWidth: MAX_CONTENT_W,
     gap: 12,
     alignItems: 'center',
     paddingHorizontal: H_PAD,
-    paddingBottom: 28,
   },
   mainBtn: {
-    width: width * 0.82,
+    alignSelf: 'stretch',
+  },
+  loginBtn: {
+    alignSelf: 'stretch',
+    backgroundColor: '#FFFFFF',
+    borderColor: '#a3796b',
   },
   joinRow: {
     flexDirection: 'row',
@@ -263,6 +318,10 @@ const styles = StyleSheet.create({
   joinText: {
     fontFamily: FontFamily.bodyMedium,
     fontSize: FontSize.labelMD,
-    color: Colors.onSurfaceVariant,
+    color: '#FFFFFF',
+    // 這行壓在花卉背景（漸層已完全透明）上，加陰影才不會被亮色花朵吃掉
+    textShadowColor: 'rgba(0,0,0,0.45)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
   },
 });

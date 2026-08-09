@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, StyleSheet, ViewStyle } from 'react-native';
-import { Colors } from '../../constants/colors';
+import { ThemeColors } from '../../constants/themes';
+import { useThemedStyles } from '../../context/ThemeContext';
 
 interface Props {
   children: React.ReactNode;
@@ -9,6 +10,7 @@ interface Props {
 }
 
 export default function Card({ children, style, variant = 'default' }: Props) {
+  const styles = useThemedStyles(makeStyles);
   return (
     <View style={[styles.card, variant === 'dashed' && styles.dashed, style]}>
       {children}
@@ -16,22 +18,22 @@ export default function Card({ children, style, variant = 'default' }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (c: ThemeColors) => StyleSheet.create({
   card: {
-    backgroundColor: Colors.surfaceContainerLowest,
+    backgroundColor: c.surfaceContainerLowest,
     borderRadius: 24,
     padding: 16,
     borderWidth: 1,
-    borderColor: Colors.surfaceVariant,
-    shadowColor: Colors.primary,
+    borderColor: c.surfaceVariant,
+    shadowColor: c.primary,
     shadowOffset: { width: 0, height: 10 },
     shadowOpacity: 0.08,
     shadowRadius: 20,
     elevation: 3,
   },
   dashed: {
-    backgroundColor: Colors.surfaceContainerHigh,
+    backgroundColor: c.surfaceContainerHigh,
     borderStyle: 'dashed',
-    borderColor: Colors.outlineVariant,
+    borderColor: c.outlineVariant,
   },
 });

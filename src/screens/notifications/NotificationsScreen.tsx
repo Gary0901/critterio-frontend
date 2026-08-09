@@ -13,7 +13,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../types/navigation';
-import { Colors } from '../../constants/colors';
+import { ThemeColors } from '../../constants/themes';
+import { useTheme, useThemedStyles } from '../../context/ThemeContext';
 import { FontFamily, FontSize } from '../../constants/typography';
 import { getNotifications, markAllNotificationsRead, markNotificationRead, deleteNotification } from '../../api';
 import { Notification } from '../../types';
@@ -31,62 +32,64 @@ type NotifConfig = {
   label: string;
 };
 
-function getConfig(type: Notification['type']): NotifConfig {
+function getConfig(type: Notification['type'], c: ThemeColors): NotifConfig {
   switch (type) {
     case 'lost_pet':
       return {
         icon: 'emergency',
-        iconColor: Colors.error,
-        iconBg: Colors.errorContainer,
-        labelColor: Colors.error,
+        iconColor: c.error,
+        iconBg: c.errorContainer,
+        labelColor: c.error,
         label: '走失寵物警報',
       };
     case 'health_reminder':
       return {
         icon: 'medical-services',
-        iconColor: Colors.secondary,
-        iconBg: Colors.secondaryContainer,
-        labelColor: Colors.secondary,
+        iconColor: c.secondary,
+        iconBg: c.secondaryContainer,
+        labelColor: c.secondary,
         label: '健康提醒',
       };
     case 'like':
       return {
         icon: 'favorite',
-        iconColor: '#E53935',
-        iconBg: '#FDECEA',
-        labelColor: '#E53935',
+        iconColor: c.favorite,
+        iconBg: c.favoriteContainer,
+        labelColor: c.favorite,
         label: '按讚',
       };
     case 'comment':
       return {
         icon: 'chat-bubble',
-        iconColor: Colors.primary,
-        iconBg: Colors.primaryFixed,
-        labelColor: Colors.primary,
+        iconColor: c.primary,
+        iconBg: c.primaryFixed,
+        labelColor: c.primary,
         label: '留言',
       };
     case 'vet_visit_parsed':
       return {
         icon: 'description',
-        iconColor: Colors.primary,
-        iconBg: Colors.primaryFixed,
-        labelColor: Colors.primary,
+        iconColor: c.primary,
+        iconBg: c.primaryFixed,
+        labelColor: c.primary,
         label: '就醫紀錄',
       };
     case 'milestone':
     default:
       return {
         icon: 'celebration',
-        iconColor: Colors.onSurfaceVariant,
-        iconBg: Colors.surfaceContainerHigh,
-        labelColor: Colors.onSurfaceVariant,
+        iconColor: c.onSurfaceVariant,
+        iconBg: c.surfaceContainerHigh,
+        labelColor: c.onSurfaceVariant,
         label: '里程碑',
       };
   }
 }
 
 function NotifCard({ notif }: { notif: Notification }) {
-  const cfg = getConfig(notif.type);
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
+  const cfg = getConfig(notif.type, colors);
   return (
     <View style={styles.card}>
       <View style={styles.cardInner}>
@@ -111,6 +114,8 @@ function NotifCard({ notif }: { notif: Notification }) {
 }
 
 export default function NotificationsScreen({ navigation }: Props) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const insets = useSafeAreaInsets();
   const [notifications, setNotifications] = useState<Notification[]>([]);
 
@@ -201,7 +206,7 @@ export default function NotificationsScreen({ navigation }: Props) {
       {/* Custom app bar with back button */}
       <View style={[styles.appBar, { paddingTop: insets.top + 8 }]}>
         <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
-          <MaterialIcons name="arrow-back" size={24} color={Colors.onSurface} />
+          <MaterialIcons name="arrow-back" size={24} color={colors.onSurface} />
         </TouchableOpacity>
         <Text style={styles.appBarTitle}>通知</Text>
         <View style={{ width: 40 }} />
@@ -229,7 +234,7 @@ export default function NotificationsScreen({ navigation }: Props) {
 
             {notifications.length === 0 && (
               <View style={styles.empty}>
-                <MaterialIcons name="notifications-none" size={48} color={Colors.outlineVariant} />
+                <MaterialIcons name="notifications-none" size={48} color={colors.outlineVariant} />
                 <Text style={styles.emptyText}>目前沒有通知</Text>
               </View>
             )}
@@ -285,15 +290,15 @@ export default function NotificationsScreen({ navigation }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background },
+const makeStyles = (c: ThemeColors) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: c.background },
   appBar: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingBottom: 8,
-    backgroundColor: Colors.background,
+    backgroundColor: c.background,
   },
   backBtn: {
     width: 40,
@@ -304,7 +309,7 @@ const styles = StyleSheet.create({
   appBarTitle: {
     fontFamily: FontFamily.headlineSemiBold,
     fontSize: FontSize.bodyLG,
-    color: Colors.primary,
+    color: c.primary,
   },
   listContent: { paddingHorizontal: 20, gap: 0 },
   pageHeader: {
@@ -317,7 +322,7 @@ const styles = StyleSheet.create({
   eyebrow: {
     fontFamily: FontFamily.headlineBold,
     fontSize: FontSize.labelSM,
-    color: Colors.primary,
+    color: c.primary,
     textTransform: 'uppercase',
     letterSpacing: 1.5,
     marginBottom: 4,
@@ -325,10 +330,10 @@ const styles = StyleSheet.create({
   pageTitle: {
     fontFamily: FontFamily.headlineBold,
     fontSize: FontSize.headlineLG,
-    color: Colors.onSurface,
+    color: c.onSurface,
   },
   markAllBtn: {
-    backgroundColor: Colors.primaryFixed,
+    backgroundColor: c.primaryFixed,
     paddingHorizontal: 14,
     paddingVertical: 9,
     borderRadius: 9999,
@@ -336,11 +341,11 @@ const styles = StyleSheet.create({
   markAllLabel: {
     fontFamily: FontFamily.headlineMedium,
     fontSize: FontSize.labelMD,
-    color: Colors.primary,
+    color: c.primary,
   },
 
   empty: { alignItems: 'center', paddingVertical: 60, gap: 12 },
-  emptyText: { fontFamily: FontFamily.bodyMedium, fontSize: FontSize.bodyMD, color: Colors.onSurfaceVariant },
+  emptyText: { fontFamily: FontFamily.bodyMedium, fontSize: FontSize.bodyMD, color: c.onSurfaceVariant },
   notifRow: { position: 'relative' },
   notifUnread: { opacity: 1 },
   unreadDot: {
@@ -350,23 +355,23 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: Colors.primary,
+    backgroundColor: c.primary,
   },
   section: { gap: 10, marginBottom: 20 },
   sectionLabel: {
     fontFamily: FontFamily.headlineBold,
     fontSize: FontSize.labelMD,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
     textTransform: 'uppercase',
     letterSpacing: 1,
     marginBottom: 2,
   },
 
   card: {
-    backgroundColor: Colors.surfaceContainerLowest,
+    backgroundColor: c.surfaceContainerLowest,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: Colors.surfaceVariant,
+    borderColor: c.surfaceVariant,
     overflow: 'hidden',
   },
   cardInner: { flexDirection: 'row', gap: 12, padding: 14 },
@@ -391,23 +396,23 @@ const styles = StyleSheet.create({
   timeAgo: {
     fontFamily: FontFamily.headlineMedium,
     fontSize: FontSize.labelSM,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
   },
   notifTitle: {
     fontFamily: FontFamily.headlineSemiBold,
     fontSize: FontSize.bodyLG,
-    color: Colors.onSurface,
+    color: c.onSurface,
     lineHeight: 24,
   },
   notifBody: {
     fontFamily: FontFamily.bodyMedium,
     fontSize: FontSize.bodyMD,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
     lineHeight: 22,
   },
   actionRow: { flexDirection: 'row', gap: 8, marginTop: 6 },
   actionPrimary: {
-    backgroundColor: Colors.primary,
+    backgroundColor: c.primary,
     paddingHorizontal: 16,
     paddingVertical: 9,
     borderRadius: 9999,
@@ -415,10 +420,10 @@ const styles = StyleSheet.create({
   actionPrimaryLabel: {
     fontFamily: FontFamily.headlineSemiBold,
     fontSize: FontSize.labelMD,
-    color: Colors.onPrimary,
+    color: c.onPrimary,
   },
   actionSecondary: {
-    backgroundColor: Colors.surfaceContainerHigh,
+    backgroundColor: c.surfaceContainerHigh,
     paddingHorizontal: 16,
     paddingVertical: 9,
     borderRadius: 9999,
@@ -426,6 +431,6 @@ const styles = StyleSheet.create({
   actionSecondaryLabel: {
     fontFamily: FontFamily.headlineMedium,
     fontSize: FontSize.labelMD,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
   },
 });

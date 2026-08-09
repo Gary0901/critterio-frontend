@@ -15,7 +15,8 @@ import Constants from 'expo-constants';
 import { RootStackParamList } from '../../types/navigation';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
-import { Colors } from '../../constants/colors';
+import { ThemeColors } from '../../constants/themes';
+import { useThemedStyles } from '../../context/ThemeContext';
 import { FontFamily, FontSize } from '../../constants/typography';
 import { useAuth } from '../../context/AuthContext';
 
@@ -30,6 +31,7 @@ type Props = {
 };
 
 export default function LoginScreen({ navigation }: Props) {
+  const styles = useThemedStyles(makeStyles);
   const { login, loginWithGoogle } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -151,10 +153,10 @@ export default function LoginScreen({ navigation }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (c: ThemeColors) => StyleSheet.create({
   container: {
     flexGrow: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: c.background,
     alignItems: 'center',
     paddingHorizontal: 20,
     paddingTop: 80,
@@ -163,23 +165,23 @@ const styles = StyleSheet.create({
   logo: {
     fontFamily: FontFamily.brand,
     fontSize: FontSize.headlineMD + 4,
-    color: Colors.primary,
+    color: c.primary,
     marginBottom: 8,
   },
   tagline: {
     fontFamily: FontFamily.bodyMedium,
     fontSize: FontSize.bodyMD,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
     marginBottom: 32,
     textAlign: 'center',
   },
   form: {
     width: '100%',
-    backgroundColor: Colors.surfaceContainerLowest,
+    backgroundColor: c.surfaceContainerLowest,
     borderRadius: 24,
     padding: 24,
     gap: 16,
-    shadowColor: Colors.primary,
+    shadowColor: c.primary,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.06,
     shadowRadius: 16,
@@ -189,18 +191,18 @@ const styles = StyleSheet.create({
   forgot: {
     fontFamily: FontFamily.headlineMedium,
     fontSize: FontSize.labelMD,
-    color: Colors.primary,
+    color: c.primary,
   },
   divider: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
   },
-  line: { flex: 1, height: 1, backgroundColor: Colors.outlineVariant },
+  line: { flex: 1, height: 1, backgroundColor: c.outlineVariant },
   dividerText: {
     fontFamily: FontFamily.headlineMedium,
     fontSize: FontSize.labelSM,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
   },
   signupRow: {
     flexDirection: 'row',
@@ -209,11 +211,11 @@ const styles = StyleSheet.create({
   signupText: {
     fontFamily: FontFamily.bodyMedium,
     fontSize: FontSize.bodyMD,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
   },
   signupLink: {
     fontFamily: FontFamily.bodySemiBold,
     fontSize: FontSize.bodyMD,
-    color: Colors.primary,
+    color: c.primary,
   },
 });

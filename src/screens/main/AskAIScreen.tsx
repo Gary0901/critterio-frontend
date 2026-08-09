@@ -17,7 +17,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import Chip from '../../components/ui/Chip';
-import { Colors } from '../../constants/colors';
+import { ThemeColors } from '../../constants/themes';
+import { useTheme, useThemedStyles } from '../../context/ThemeContext';
 import { FontFamily, FontSize } from '../../constants/typography';
 import { listAiConversations, createAiConversation, getAiConversation, streamAiMessage, getPets } from '../../api';
 import { AiMessage, Conversation, Pet } from '../../types';
@@ -27,7 +28,7 @@ const SIDEBAR_WIDTH = 280;
 const NEW_CONV_ID = '__new__';
 
 // AI 回覆偶爾會用 **文字** 標粗體，聊天氣泡目前只是純文字渲染，這裡把 ** 語法轉成真的粗體
-function renderMarkdownBold(content: string) {
+function renderMarkdownBold(content: string, styles: ReturnType<typeof makeStyles>) {
   const parts = content.split(/(\*\*.+?\*\*)/g);
   return parts.map((part, i) => {
     const match = part.match(/^\*\*(.+)\*\*$/);
@@ -40,6 +41,8 @@ function renderMarkdownBold(content: string) {
 }
 
 export default function AskAIScreen() {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const insets = useSafeAreaInsets();
 
   const [conversations, setConversations] = useState<Conversation[]>([
@@ -285,14 +288,11 @@ export default function AskAIScreen() {
         {/* Header */}
         <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
           <TouchableOpacity style={styles.iconBtnSm} onPress={openSidebar}>
-            <MaterialIcons name="menu" size={24} color={Colors.onSurface} />
+            <MaterialIcons name="menu" size={24} color={colors.onSurface} />
           </TouchableOpacity>
           <View style={styles.headerTitleCol}>
             <View style={styles.headerTitleRow}>
               <Text style={styles.headerTitle}>AI 助理</Text>
-              <View style={styles.betaBadge}>
-                <Text style={styles.betaLabel}>Beta</Text>
-              </View>
             </View>
             {activeConv.messages.length > 0 && (
               <Text style={styles.headerSubtitle} numberOfLines={1}>
@@ -305,7 +305,7 @@ export default function AskAIScreen() {
 
         {/* Disclaimer */}
         <View style={styles.disclaimer}>
-          <MaterialIcons name="info-outline" size={13} color={Colors.onSurfaceVariant} />
+          <MaterialIcons name="info-outline" size={13} color={colors.onSurfaceVariant} />
           <Text style={styles.disclaimerText}>
             AI 回覆僅供健康參考，不構成獸醫診斷或醫療建議。緊急情況請立即就醫。
           </Text>
@@ -325,7 +325,7 @@ export default function AskAIScreen() {
             >
               {item.role === 'assistant' && (
                 <View style={styles.aiAvatar}>
-                  <MaterialIcons name="auto-awesome" size={16} color={Colors.primaryContainer} />
+                  <MaterialIcons name="auto-awesome" size={16} color={colors.primaryContainer} />
                 </View>
               )}
               <View
@@ -342,7 +342,7 @@ export default function AskAIScreen() {
                   />
                 )}
                 <Text style={[styles.bubbleText, item.role === 'user' && styles.userText]}>
-                  {renderMarkdownBold(item.content)}
+                  {renderMarkdownBold(item.content, styles)}
                 </Text>
                 <Text style={[styles.timestamp, item.role === 'user' && styles.timestampUser]}>
                   {item.timestamp}
@@ -353,7 +353,7 @@ export default function AskAIScreen() {
           ListFooterComponent={
             loading ? (
               <View style={styles.typingIndicator}>
-                <ActivityIndicator size="small" color={Colors.primary} />
+                <ActivityIndicator size="small" color={colors.primary} />
                 <Text style={styles.typingText}>AI 助理思考中...</Text>
               </View>
             ) : null
@@ -390,7 +390,7 @@ export default function AskAIScreen() {
                     activeOpacity={0.75}
                   >
                     <Text style={styles.petChipLabel}>{pet.name}</Text>
-                    <MaterialIcons name="close" size={11} color={Colors.onSecondaryContainer} />
+                    <MaterialIcons name="close" size={11} color={colors.onSecondaryContainer} />
                   </TouchableOpacity>
                 ) : null;
               })()}
@@ -412,7 +412,7 @@ export default function AskAIScreen() {
               style={styles.imageRemoveBtn}
               onPress={() => setPendingImage(null)}
             >
-              <MaterialIcons name="close" size={14} color={Colors.onPrimary} />
+              <MaterialIcons name="close" size={14} color={colors.onPrimary} />
             </TouchableOpacity>
           </View>
         )}
@@ -420,16 +420,16 @@ export default function AskAIScreen() {
         {/* Input bar */}
         <View style={[styles.inputBar, { paddingBottom: insets.bottom + 12 }]}>
           <TouchableOpacity style={styles.iconBtn} onPress={() => pickImage('camera')}>
-            <MaterialIcons name="photo-camera" size={22} color={Colors.onSurface} />
+            <MaterialIcons name="photo-camera" size={22} color={colors.onSurface} />
           </TouchableOpacity>
           <TouchableOpacity style={styles.iconBtn} onPress={() => pickImage('gallery')}>
-            <MaterialIcons name="photo-library" size={22} color={Colors.onSurface} />
+            <MaterialIcons name="photo-library" size={22} color={colors.onSurface} />
           </TouchableOpacity>
           <View style={styles.inputWrap}>
             <TextInput
               style={styles.textInput}
               placeholder="告訴 AI 助理發生了什麼事..."
-              placeholderTextColor={Colors.outlineVariant}
+              placeholderTextColor={colors.outlineVariant}
               value={input}
               onChangeText={(t) => setInput(t.slice(0, 500))}
               multiline
@@ -447,7 +447,7 @@ export default function AskAIScreen() {
             disabled={loading}
           >
             <Text style={styles.sendLabel}>送出</Text>
-            <MaterialIcons name="send" size={14} color={Colors.onPrimary} />
+            <MaterialIcons name="send" size={14} color={colors.onPrimary} />
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
@@ -469,7 +469,7 @@ export default function AskAIScreen() {
         <View style={[styles.sidebarTop, { paddingTop: insets.top + 16 }]}>
           <Text style={styles.sidebarTitle}>對話記錄</Text>
           <TouchableOpacity style={styles.iconBtnSm} onPress={newConversation}>
-            <MaterialIcons name="edit" size={20} color={Colors.primary} />
+            <MaterialIcons name="edit" size={20} color={colors.primary} />
           </TouchableOpacity>
         </View>
         <FlatList
@@ -496,8 +496,8 @@ export default function AskAIScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: Colors.background },
+const makeStyles = (c: ThemeColors) => StyleSheet.create({
+  root: { flex: 1, backgroundColor: c.background },
   kav: { flex: 1 },
 
   // Header
@@ -507,7 +507,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingBottom: 8,
-    backgroundColor: Colors.background,
+    backgroundColor: c.background,
   },
   headerTitleCol: {
     flex: 1,
@@ -523,25 +523,13 @@ const styles = StyleSheet.create({
   headerSubtitle: {
     fontFamily: FontFamily.bodyMedium,
     fontSize: FontSize.labelSM,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
     marginTop: 1,
   },
   headerTitle: {
     fontFamily: FontFamily.headlineSemiBold,
     fontSize: FontSize.bodyLG,
-    color: Colors.onSurface,
-  },
-  betaBadge: {
-    backgroundColor: '#FF8C00',
-    borderRadius: 4,
-    paddingHorizontal: 5,
-    paddingVertical: 1,
-  },
-  betaLabel: {
-    fontFamily: FontFamily.headlineMedium,
-    fontSize: 10,
-    color: '#fff',
-    letterSpacing: 0.4,
+    color: c.onSurface,
   },
   disclaimer: {
     flexDirection: 'row',
@@ -549,14 +537,14 @@ const styles = StyleSheet.create({
     gap: 6,
     paddingHorizontal: 16,
     paddingVertical: 7,
-    backgroundColor: Colors.surfaceContainerLow,
+    backgroundColor: c.surfaceContainerLow,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.surfaceVariant,
+    borderBottomColor: c.surfaceVariant,
   },
   disclaimerText: {
     fontFamily: FontFamily.bodyMedium,
     fontSize: FontSize.labelSM,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
     flex: 1,
     lineHeight: 18,
   },
@@ -576,37 +564,37 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: Colors.primaryFixed,
+    backgroundColor: c.primaryFixed,
     alignItems: 'center',
     justifyContent: 'center',
   },
   bubbleContent: { maxWidth: '78%', borderRadius: 18, padding: 12, gap: 4 },
   aiContent: {
-    backgroundColor: Colors.surfaceContainerLowest,
+    backgroundColor: c.surfaceContainerLowest,
     borderWidth: 1,
-    borderColor: Colors.surfaceVariant,
+    borderColor: c.surfaceVariant,
     borderBottomLeftRadius: 4,
   },
   userContent: {
-    backgroundColor: Colors.primary,
+    backgroundColor: c.primary,
     borderBottomRightRadius: 4,
   },
   bubbleImage: { width: '100%', height: 160, borderRadius: 10 },
   bubbleText: {
     fontFamily: FontFamily.bodyMedium,
     fontSize: FontSize.bodyMD,
-    color: Colors.onSurface,
+    color: c.onSurface,
     lineHeight: 22,
   },
   bubbleTextBold: { fontFamily: FontFamily.bodyBold },
-  userText: { color: Colors.onPrimary },
+  userText: { color: c.onPrimary },
   timestamp: {
     fontFamily: FontFamily.bodyMedium,
     fontSize: FontSize.labelSM,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
     alignSelf: 'flex-end',
   },
-  timestampUser: { color: `${Colors.onPrimary}99` },
+  timestampUser: { color: `${c.onPrimary}99` },
   typingIndicator: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -617,7 +605,7 @@ const styles = StyleSheet.create({
   typingText: {
     fontFamily: FontFamily.bodyMedium,
     fontSize: FontSize.labelMD,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
   },
 
   // Chip rows
@@ -625,12 +613,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 4,
     borderRadius: 9999,
-    backgroundColor: `${Colors.secondary}1A`,
+    backgroundColor: `${c.secondary}1A`,
   },
   petChipUnselectedLabel: {
     fontFamily: FontFamily.headlineMedium,
     fontSize: FontSize.labelSM,
-    color: Colors.secondary,
+    color: c.secondary,
   },
   petChip: {
     flexDirection: 'row',
@@ -639,12 +627,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 4,
     borderRadius: 9999,
-    backgroundColor: Colors.secondaryContainer,
+    backgroundColor: c.secondaryContainer,
   },
   petChipLabel: {
     fontFamily: FontFamily.headlineMedium,
     fontSize: FontSize.labelSM,
-    color: Colors.onSecondaryContainer,
+    color: c.onSecondaryContainer,
   },
   chipRow: {
     flexDirection: 'row',
@@ -654,7 +642,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     alignItems: 'center',
     borderTopWidth: 1,
-    borderTopColor: Colors.surfaceVariant,
+    borderTopColor: c.surfaceVariant,
   },
 
   // Image preview
@@ -667,7 +655,7 @@ const styles = StyleSheet.create({
     width: 20,
     height: 20,
     borderRadius: 10,
-    backgroundColor: Colors.primary,
+    backgroundColor: c.primary,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -679,16 +667,16 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingHorizontal: 12,
     paddingTop: 10,
-    backgroundColor: Colors.surfaceContainerLow,
+    backgroundColor: c.surfaceContainerLow,
     borderTopWidth: 1,
-    borderTopColor: Colors.surfaceVariant,
+    borderTopColor: c.surfaceVariant,
   },
   iconBtn: { padding: 8, marginBottom: 4 },
   inputWrap: { flex: 1, justifyContent: 'center' },
   textInput: {
     fontFamily: FontFamily.bodyMedium,
     fontSize: FontSize.bodyMD,
-    color: Colors.onSurface,
+    color: c.onSurface,
     maxHeight: 100,
     paddingVertical: 8,
   },
@@ -696,14 +684,14 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-end',
     fontFamily: FontFamily.bodyMedium,
     fontSize: FontSize.labelSM,
-    color: Colors.outlineVariant,
+    color: c.outlineVariant,
   },
-  charCountWarn: { color: Colors.error },
+  charCountWarn: { color: c.error },
   sendBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: Colors.primary,
+    backgroundColor: c.primary,
     paddingHorizontal: 14,
     paddingVertical: 10,
     borderRadius: 9999,
@@ -713,7 +701,7 @@ const styles = StyleSheet.create({
   sendLabel: {
     fontFamily: FontFamily.headlineMedium,
     fontSize: FontSize.labelMD,
-    color: Colors.onPrimary,
+    color: c.onPrimary,
   },
 
   // Sidebar
@@ -727,7 +715,7 @@ const styles = StyleSheet.create({
     left: 0,
     bottom: 0,
     width: SIDEBAR_WIDTH,
-    backgroundColor: Colors.surfaceContainerLow,
+    backgroundColor: c.surfaceContainerLow,
     zIndex: 11,
     shadowColor: '#000',
     shadowOffset: { width: 4, height: 0 },
@@ -742,35 +730,35 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingBottom: 12,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.surfaceVariant,
+    borderBottomColor: c.surfaceVariant,
   },
   sidebarTitle: {
     fontFamily: FontFamily.headlineSemiBold,
     fontSize: FontSize.bodyLG,
-    color: Colors.onSurface,
+    color: c.onSurface,
   },
   convItem: {
     paddingHorizontal: 20,
     paddingVertical: 14,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.surfaceVariant,
+    borderBottomColor: c.surfaceVariant,
   },
   convItemActive: {
-    backgroundColor: Colors.primaryContainer,
+    backgroundColor: c.primaryContainer,
   },
   convTitle: {
     fontFamily: FontFamily.bodyMedium,
     fontSize: FontSize.bodyMD,
-    color: Colors.onSurface,
+    color: c.onSurface,
     marginBottom: 2,
   },
   convTitleActive: {
     fontFamily: FontFamily.headlineMedium,
-    color: Colors.primary,
+    color: c.primary,
   },
   convDate: {
     fontFamily: FontFamily.bodyMedium,
     fontSize: FontSize.labelSM,
-    color: Colors.onSurfaceVariant,
+    color: c.onSurfaceVariant,
   },
 });
