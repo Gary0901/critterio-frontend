@@ -564,6 +564,7 @@ export default function ProfileScreen({ navigation }: Props) {
                 { icon: 'notifications-none' as const, label: '通知設定', onPress: () => navigation.navigate('NotificationSettings') },
                 { icon: 'lock-outline' as const, label: '隱私與安全', onPress: () => navigation.navigate('PrivacySecurity') },
                 { icon: 'palette' as const, label: '外觀', onPress: () => navigation.navigate('Appearance') },
+                { icon: 'storefront' as const, label: '商家合作', onPress: () => navigation.navigate('PartnerProgram') },
                 { icon: 'help-outline' as const, label: '幫助與支援', onPress: () => navigation.navigate('HelpSupport') },
               ].map((item, i, arr) => (
                 <View key={item.label}>

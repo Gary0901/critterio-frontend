@@ -40,6 +40,7 @@ import PetDetailScreen from '../screens/main/PetDetailScreen';
 import DailyLogScreen from '../screens/main/DailyLogScreen';
 import VetVisitsScreen from '../screens/main/VetVisitsScreen';
 import PetCareGuideScreen from '../screens/main/PetCareGuideScreen';
+import PartnerProgramScreen from '../screens/main/PartnerProgramScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const Tab = createBottomTabNavigator<MainTabParamList>();
@@ -253,6 +254,11 @@ export default function AppNavigation() {
         <Stack.Screen
           name="NotificationSettings"
           component={NotificationSettingsScreen}
+          options={{ animation: 'slide_from_right' }}
+        />
+        <Stack.Screen
+          name="PartnerProgram"
+          component={PartnerProgramScreen}
           options={{ animation: 'slide_from_right' }}
         />
         <Stack.Screen

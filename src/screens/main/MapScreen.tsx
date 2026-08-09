@@ -538,6 +538,22 @@ export default function MapScreen() {
     setTimeout(() => { markerJustPressed.current = false; }, 300);
   };
 
+  /**
+   * 從收藏清單挑一個地點：關面板、選中、並把地圖移過去。
+   *
+   * 原本只有前兩件事 —— 收藏的地點常常在畫面外，不移動地圖的話
+   * 卡片跳出來了但使用者根本看不到那個 pin 在哪。
+   * 點 pin 不需要移動（本來就在畫面上），所以這條路徑跟 handlePinPress 分開。
+   */
+  const handleFavoritePress = (place: Place) => {
+    setShowFavorites(false);
+    setSelectedPlace(place);
+    mapRef.current?.animateToRegion(
+      { ...place.coordinate, latitudeDelta: 0.01, longitudeDelta: 0.01 },
+      500,
+    );
+  };
+
   const handleMapPress = () => {
     if (markerJustPressed.current) return;
     setSelectedPlace(null);
@@ -802,6 +818,7 @@ export default function MapScreen() {
                 onNavigate={openGoogleMaps}
                 isFav={isFavorite(selectedPlace.id)}
                 onToggleFavorite={() => toggleFavorite(selectedPlace.id)}
+                onPartnerInfo={() => navigation.navigate('PartnerProgram')}
               />
             : <PlaceCard
                 place={selectedPlace}
@@ -826,7 +843,7 @@ export default function MapScreen() {
           <FavoritesSheet
             favoritePlaces={favoritePlaces}
             onClose={() => setShowFavorites(false)}
-            onSelectPlace={(place) => { setSelectedPlace(place); setShowFavorites(false); }}
+            onSelectPlace={handleFavoritePress}
             onToggleFavorite={toggleFavorite}
           />
         )}
@@ -945,12 +962,14 @@ function PartnerPlaceCard({
   onNavigate,
   isFav,
   onToggleFavorite,
+  onPartnerInfo,
 }: {
   place: Place;
   onClose: () => void;
   onNavigate: (p: Place) => void;
   isFav: boolean;
   onToggleFavorite: () => void;
+  onPartnerInfo: () => void;
 }) {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
@@ -1045,10 +1064,16 @@ function PartnerPlaceCard({
         )}
 
         {/* Partner badge */}
-        <View style={styles.heroPartnerBadge}>
+        <TouchableOpacity
+          style={styles.heroPartnerBadge}
+          onPress={onPartnerInfo}
+          activeOpacity={0.8}
+          accessibilityRole="button"
+          accessibilityLabel="了解合作夥伴方案"
+        >
           <MaterialIcons name="star" size={11} color={colors.onPartnerBadge} />
           <Text style={styles.heroPartnerText}>合作夥伴</Text>
-        </View>
+        </TouchableOpacity>
 
         {/* Rating badge */}
         {place.rating != null && (

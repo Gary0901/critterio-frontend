@@ -671,7 +671,13 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   // Cell is taller than wide so stacked bars have room below the circle
   dayCell: {
     width: '14.28%',
-    aspectRatio: 0.78,
+    // 固定高度而非 aspectRatio：用比例的話螢幕越寬格子越高，
+    // Pro Max 上一格會撐到 67pt，但內容只有數字 + 最多 3 條事件色條，
+    // 多出來的空間就變成月曆下方那一大片白。
+    // 用 minHeight 而非 height：使用者開了系統放大文字時，日期數字會變大，
+    // 寫死 height 會把它切掉；minHeight 讓格子在需要時長高，平常維持一致。
+    // 56 = 數字 22 + 色條區 24 + 上下留白 10
+    minHeight: 56,
     alignItems: 'center',
     justifyContent: 'flex-start',
     paddingTop: 5,

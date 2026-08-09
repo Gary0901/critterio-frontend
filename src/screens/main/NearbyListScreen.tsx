@@ -116,10 +116,12 @@ function PlaceRow({
   place,
   isFav,
   onToggleFavorite,
+  onPartnerInfo,
 }: {
   place: ListPlace;
   isFav: boolean;
   onToggleFavorite: () => void;
+  onPartnerInfo: () => void;
 }) {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
@@ -164,10 +166,16 @@ function PlaceRow({
 
         <View style={styles.tagRow}>
           {place.isPartner && (
-            <View style={styles.partnerTag}>
-              <MaterialIcons name="verified" size={11} color={colors.onPrimary} />
+            <TouchableOpacity
+              style={styles.partnerTag}
+              onPress={onPartnerInfo}
+              activeOpacity={0.8}
+              accessibilityRole="button"
+              accessibilityLabel="了解合作夥伴方案"
+            >
+              <MaterialIcons name="star" size={11} color={colors.onPartnerBadge} />
               <Text style={styles.partnerTagText}>合作夥伴</Text>
-            </View>
+            </TouchableOpacity>
           )}
           <View style={[styles.catTag, { backgroundColor: cfg.bgColor }]}>
             <Text style={[styles.catTagText, { color: cfg.iconColor }]}>{cfg.label}</Text>
@@ -505,6 +513,7 @@ export default function NearbyListScreen({ onSwitchToMap, favoriteIds, onToggleF
               place={item}
               isFav={effectiveFavIds.has(String(item.id))}
               onToggleFavorite={() => handleToggleFavorite(String(item.id))}
+              onPartnerInfo={() => navigation.navigate('PartnerProgram')}
             />
           )}
           ItemSeparatorComponent={() => <View style={styles.separator} />}
@@ -516,7 +525,27 @@ export default function NearbyListScreen({ onSwitchToMap, favoriteIds, onToggleF
                   更新中...
                 </Text>
               </View>
-            ) : null
+            ) : (
+              /*
+                招商入口放在清單最底下 —— 使用者剛掃完一整排店家，
+                「我的店／我常去的店不在這裡」這個念頭就是在這一刻產生的。
+                同時打到兩種人：飼主會想推薦，老闆會想加入。
+              */
+              <TouchableOpacity
+                style={styles.partnerCta}
+                onPress={() => navigation.navigate('PartnerProgram')}
+                activeOpacity={0.8}
+              >
+                <View style={styles.partnerCtaIcon}>
+                  <MaterialIcons name="storefront" size={20} color={colors.onPartnerBadge} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.partnerCtaTitle}>沒看到你常去的店嗎？</Text>
+                  <Text style={styles.partnerCtaDesc}>讓它出現在 Critterio</Text>
+                </View>
+                <MaterialIcons name="chevron-right" size={20} color={colors.outline} />
+              </TouchableOpacity>
+            )
           }
           contentContainerStyle={{ paddingBottom: insets.bottom + 16 }}
           ListEmptyComponent={
@@ -619,11 +648,43 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
 
   tagRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   partnerIcon: { marginRight: 4 },
+  partnerCta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginHorizontal: 16,
+    marginTop: 16,
+    marginBottom: 24,
+    padding: 14,
+    borderRadius: 16,
+    backgroundColor: c.surfaceContainerLowest,
+    borderWidth: 1,
+    borderColor: c.outlineVariant,
+  },
+  partnerCtaIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: c.partnerBadge,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  partnerCtaTitle: {
+    fontFamily: FontFamily.headlineMedium,
+    fontSize: FontSize.bodyMD,
+    color: c.onSurface,
+  },
+  partnerCtaDesc: {
+    fontFamily: FontFamily.bodyMedium,
+    fontSize: FontSize.labelSM,
+    color: c.onSurfaceVariant,
+    marginTop: 2,
+  },
   partnerTag: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 3,
-    backgroundColor: c.primary,
+    backgroundColor: c.partnerBadge,
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 999,
@@ -631,7 +692,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   partnerTagText: {
     fontFamily: FontFamily.headlineMedium,
     fontSize: FontSize.labelSM - 1,
-    color: c.onPrimary,
+    color: c.onPartnerBadge,
   },
   catTag: { borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 },
   catTagText: { fontFamily: FontFamily.bodyMedium, fontSize: 11 },
