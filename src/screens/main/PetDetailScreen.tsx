@@ -28,6 +28,7 @@ import Badge from '../../components/ui/Badge';
 import { ThemeColors } from '../../constants/themes';
 import { useTheme, useThemedStyles } from '../../context/ThemeContext';
 import { PET_COLOR_COUNT, petColorAt } from '../../constants/petColors';
+import { compressForUpload } from '../../utils/compressImage';
 import { FontFamily, FontSize } from '../../constants/typography';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getPets, getWeightLogs, addWeightLog, updatePetData, deletePet as apiDeletePet, getDiaryEntries, getAiCare, updateCareTargets, AiCareResult } from '../../api';
@@ -228,9 +229,12 @@ export default function PetDetailScreen({ navigation, route }: Props) {
     const asset = result.assets[0];
     setPhotoUploading(true);
     try {
-      const res = await updatePetData(petId, {
-        photo: { uri: asset.uri, name: asset.fileName ?? 'photo.jpg', type: asset.mimeType ?? 'image/jpeg' },
+      const photo = await compressForUpload({
+        uri: asset.uri,
+        name: asset.fileName ?? 'photo.jpg',
+        type: asset.mimeType ?? 'image/jpeg',
       });
+      const res = await updatePetData(petId, { photo });
       if (res.success) {
         setPet((prev) => prev ? { ...prev, ...res.data } : prev);
       } else {
@@ -277,6 +281,15 @@ export default function PetDetailScreen({ navigation, route }: Props) {
     const birthErr = validateDate(editBirthYear, editBirthMonth, editBirthDay, '生日');
     const joinErr  = validateDate(editJoinYear,  editJoinMonth,  editJoinDay,  '加入家庭日');
     if (birthErr || joinErr) { setEditError((birthErr ?? joinErr)!); return; }
+    // 交叉驗證：validateDate 只看單一欄位的格式，看不出兩個日期的先後關係
+    const bStr = editBirthYear && editBirthMonth && editBirthDay
+      ? `${editBirthYear}-${editBirthMonth.padStart(2, '0')}-${editBirthDay.padStart(2, '0')}` : '';
+    const jStr = editJoinYear && editJoinMonth && editJoinDay
+      ? `${editJoinYear}-${editJoinMonth.padStart(2, '0')}-${editJoinDay.padStart(2, '0')}` : '';
+    if (bStr && jStr && jStr < bStr) {
+      setEditError('加入家庭日期不能早於出生日期');
+      return;
+    }
     setEditError('');
     setSaving(true);
     try {

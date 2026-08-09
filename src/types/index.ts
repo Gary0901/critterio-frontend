@@ -68,12 +68,14 @@ export interface CalendarEvent {
   description: string;
   time: string;        // 'HH:MM AM/PM', or '' when allDay is true
   allDay: boolean;
-  category: 'vet' | 'medication' | 'grooming' | 'activity' | 'other';
+  category: 'vet' | 'medication' | 'grooming' | 'activity' | 'anniversary' | 'other';
   petId: string;       // pet id, or 'all' for all pets
   done: boolean;
   date: string;        // YYYY-MM-DD
   repeat: 'none' | 'daily' | 'weekly' | 'monthly';
   recurringId?: string; // shared across recurring group
+  /** 由寵物生日／加入家庭日自動產生。使用者不能勾選完成或刪除 */
+  isAuto?: boolean;
 }
 
 export interface Notification {

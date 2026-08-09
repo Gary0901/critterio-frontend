@@ -20,6 +20,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import * as ImagePicker from 'expo-image-picker';
 import { RootStackParamList } from '../../types/navigation';
 import Avatar from '../../components/ui/Avatar';
+import { compressForUpload } from '../../utils/compressImage';
 import { ThemeColors } from '../../constants/themes';
 import { useTheme, useThemedStyles } from '../../context/ThemeContext';
 import { FontFamily, FontSize } from '../../constants/typography';
@@ -256,9 +257,12 @@ export default function ProfileScreen({ navigation }: Props) {
       setLocalAvatarUri(asset.uri);
       setAvatarUploading(true);
       try {
-        const res = await updateProfile({
-          avatar: { uri: asset.uri, name: asset.fileName ?? 'avatar.jpg', type: asset.mimeType ?? 'image/jpeg' },
+        const avatar = await compressForUpload({
+          uri: asset.uri,
+          name: asset.fileName ?? 'avatar.jpg',
+          type: asset.mimeType ?? 'image/jpeg',
         });
+        const res = await updateProfile({ avatar });
         updateUser({ avatarUrl: res.data.avatarUrl });
         setLocalAvatarUri(null);
       } catch (e: any) {

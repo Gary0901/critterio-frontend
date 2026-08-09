@@ -1758,7 +1758,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     flex: 1,
     fontFamily: FontFamily.headlineBold,
     fontSize: FontSize.bodyLG,
-    color: c.onSurface,
+    color: c.partnerTitle,
   },
   partnerStatsRow: {
     flexDirection: 'row',

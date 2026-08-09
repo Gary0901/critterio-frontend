@@ -19,10 +19,10 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
-import * as ImageManipulator from 'expo-image-manipulator';
 import * as Clipboard from 'expo-clipboard';
 import AppBar from '../../components/layout/AppBar';
 import Avatar from '../../components/ui/Avatar';
+import { compressForUpload } from '../../utils/compressImage';
 import { ThemeColors } from '../../constants/themes';
 import { useTheme, useThemedStyles } from '../../context/ThemeContext';
 import { FontFamily, FontSize } from '../../constants/typography';
@@ -414,14 +414,10 @@ export default function CommunityScreen({ navigation }: Props) {
     type: 'image/jpeg',
   });
 
+  // 改用共用工具，參數從 1080/0.75 提升到 1440/0.85（視覺無損）
   const compressImage = async (payload: ImagePayload): Promise<ImagePayload> => {
     try {
-      const result = await ImageManipulator.manipulateAsync(
-        payload.uri,
-        [{ resize: { width: 1080 } }],
-        { compress: 0.75, format: ImageManipulator.SaveFormat.JPEG }
-      );
-      return { uri: result.uri, name: 'photo.jpg', type: 'image/jpeg' };
+      return await compressForUpload(payload);
     } catch {
       return payload;
     }

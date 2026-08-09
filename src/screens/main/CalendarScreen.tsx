@@ -37,6 +37,7 @@ const makeCategoryConfig = (
   medication: { icon: 'medical-services', color: c.secondary,        bg: c.secondaryContainer },
   grooming:   { icon: 'content-cut',      color: c.primaryContainer, bg: c.primaryFixed },
   activity:   { icon: 'directions-run',   color: c.onSurface,        bg: c.surfaceContainerHigh },
+  anniversary:{ icon: 'cake',            color: c.primary,          bg: c.primaryFixed },
   other:      { icon: 'event-note',       color: c.onSurface,        bg: c.surfaceContainerHigh },
 });
 
@@ -505,6 +506,7 @@ export default function CalendarScreen({ navigation }: Props) {
                       petColor={color}
                       petName={name}
                       todayStr={todayStr}
+                      showActions={!e.isAuto}
                       onToggle={toggle}
                       onDelete={setDeletingEvent}
                       isOverdue={!e.done && e.date < todayStr}

@@ -168,11 +168,20 @@ export async function updatePetData(petId: string, updates: {
   if (updates.photo) {
     form.append('photo', { uri: updates.photo.uri, name: updates.photo.name, type: updates.photo.type } as any);
   }
-  const res = await client.patch(`/pets/${petId}`, form, {
-    headers: { 'Content-Type': 'multipart/form-data' },
-  });
-  if (!res.data.success) return { success: false, data: null as any, message: res.data.message };
-  return { success: true, data: mapPet(res.data.data), message: '' };
+  // axios 對 4xx 是直接 throw 的，不會走到下面的 success 判斷 ——
+  // 不接住的話後端的驗證訊息（例如「加入家庭日期不能早於出生日期」）
+  // 會被呼叫端的 catch 蓋成「網路錯誤」，看起來就像驗證沒生效
+  try {
+    const res = await client.patch(`/pets/${petId}`, form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    if (!res.data.success) return { success: false, data: null as any, message: res.data.message };
+    return { success: true, data: mapPet(res.data.data), message: '' };
+  } catch (e: any) {
+    const message = e?.response?.data?.message;
+    if (message) return { success: false, data: null as any, message };
+    throw e; // 真的網路問題就照樣往上拋
+  }
 }
 
 // DELETE /api/v1/pets/:id
@@ -532,7 +541,7 @@ const CATEGORY_TO_TYPE: Record<string, string> = {
   vet: 'medical', medication: 'deworm', grooming: 'grooming', activity: 'activity', other: 'other',
 };
 const TYPE_TO_CATEGORY: Record<string, CalendarEvent['category']> = {
-  vaccine: 'vet', deworm: 'medication', medical: 'vet', grooming: 'grooming', activity: 'activity', other: 'other',
+  vaccine: 'vet', deworm: 'medication', medical: 'vet', grooming: 'grooming', activity: 'activity', anniversary: 'anniversary', other: 'other',
 };
 
 function ampmToISO(date: string, timeStr: string, allDay: boolean): string {
@@ -568,6 +577,7 @@ function mapBackendEvent(e: any): CalendarEvent {
     date: dateStr,
     repeat: e.repeat ?? 'none',
     recurringId: e.recurringId,
+    isAuto: Boolean(e.autoKind),
   };
 }
 

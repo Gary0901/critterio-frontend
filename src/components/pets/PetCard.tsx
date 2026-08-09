@@ -35,8 +35,19 @@ export default function PetCard({ pet, color, onPress, onMenuPress }: Props) {
           ) : pet.photoUrl ? (
             <Image source={{ uri: pet.photoUrl }} style={styles.image} />
           ) : (
-            <View style={[styles.image, styles.imagePlaceholder]}>
-              <MaterialIcons name="pets" size={48} color={colors.outlineVariant} />
+            /*
+              沒照片時用這隻寵物的識別色鋪底 —— 灰底加淡爪印看起來像沒載入完，
+              帶顏色就成為刻意的設計，而且每隻寵物長得不一樣。
+              '22' 是約 13% 透明度，跟行事曆的寵物標籤同一個手法。
+            */
+            <View
+              style={[
+                styles.image,
+                styles.imagePlaceholder,
+                color ? { backgroundColor: color + '22' } : null,
+              ]}
+            >
+              <MaterialIcons name="pets" size={48} color={color ?? colors.outlineVariant} />
             </View>
           )}
           <View style={styles.badgeOverlay}>

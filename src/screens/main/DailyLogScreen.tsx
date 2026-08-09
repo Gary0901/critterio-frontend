@@ -19,6 +19,7 @@ import { RouteProp } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import { RootStackParamList } from '../../types/navigation';
 import { ThemeColors } from '../../constants/themes';
+import { compressForUpload } from '../../utils/compressImage';
 import { useTheme, useThemedStyles } from '../../context/ThemeContext';
 import { FontFamily, FontSize, LineHeight } from '../../constants/typography';
 import { getDiaryEntries, addDiaryEntry } from '../../api';
@@ -202,7 +203,7 @@ export default function DailyLogScreen({ navigation, route }: Props) {
     }
     setSaving(true);
     const photo = photoUri
-      ? { uri: photoUri, name: `log_${Date.now()}.jpg`, type: 'image/jpeg' }
+      ? await compressForUpload({ uri: photoUri, name: `log_${Date.now()}.jpg`, type: 'image/jpeg' })
       : undefined;
     const res = await addDiaryEntry(petId, {
       content: note.trim() || '今日日誌',

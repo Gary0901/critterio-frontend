@@ -22,6 +22,7 @@ import { ThemeColors } from '../../constants/themes';
 import { useTheme, useThemedStyles } from '../../context/ThemeContext';
 import { FontFamily, FontSize } from '../../constants/typography';
 import { addPet } from '../../api';
+import { compressForUpload } from '../../utils/compressImage';
 import { Species, Gender } from '../../types';
 
 type Props = {
@@ -130,6 +131,29 @@ export default function AddPetScreen({ navigation }: Props) {
       );
       return;
     }
+    // 後端也會擋，但等 API 來回才報錯體驗差 —— 這兩個日期會餵給紀念日產生器，
+    // 錯了會跑出「加入家庭 -3 週年」這種事件
+    const birthStr = birthYear && birthMonth && birthDay
+      ? `${birthYear}-${birthMonth.padStart(2, '0')}-${birthDay.padStart(2, '0')}` : '';
+    const joinStr = joinYear && joinMonth && joinDay
+      ? `${joinYear}-${joinMonth.padStart(2, '0')}-${joinDay.padStart(2, '0')}` : '';
+    const todayStr = (() => {
+      const d = new Date();
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    })();
+    if (birthStr && birthStr > todayStr) {
+      Alert.alert('日期不正確', '出生日期不能是未來。');
+      return;
+    }
+    if (joinStr && joinStr > todayStr) {
+      Alert.alert('日期不正確', '加入家庭日期不能是未來。');
+      return;
+    }
+    if (birthStr && joinStr && joinStr < birthStr) {
+      Alert.alert('日期不正確', '加入家庭日期不能早於出生日期。');
+      return;
+    }
+
     setLoading(true);
     try {
       const formData = new FormData();
@@ -149,7 +173,8 @@ export default function AddPetScreen({ navigation }: Props) {
       if (photoUri) {
         const filename = photoUri.split('/').pop() ?? 'photo.jpg';
         const ext = filename.split('.').pop()?.toLowerCase() ?? 'jpg';
-        formData.append('photo', { uri: photoUri, name: filename, type: `image/${ext}` } as any);
+        const photo = await compressForUpload({ uri: photoUri, name: filename, type: `image/${ext}` });
+        formData.append('photo', photo as any);
       }
 
       await addPet(formData as any);
