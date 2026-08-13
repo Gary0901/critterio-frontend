@@ -1,14 +1,16 @@
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, ActionSheetIOS, Platform } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, ActionSheetIOS, Platform, Switch } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { RootStackParamList } from '../../types/navigation';
 import { ThemeColors } from '../../constants/themes';
 import { useTheme, useThemedStyles } from '../../context/ThemeContext';
 import { FontFamily, FontSize } from '../../constants/typography';
 import { useAuth } from '../../context/AuthContext';
 import { updateProfile, deleteAccount as apiDeleteAccount } from '../../api';
+import { AI_DISCLAIMER_KEY } from '../../constants/storageKeys';
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'PrivacySecurity'>;
@@ -23,6 +25,27 @@ export default function PrivacySecurityScreen({ navigation }: Props) {
     user?.defaultPostVisibility ?? 'public'
   );
   const [deleting, setDeleting] = useState(false);
+
+  // 開關語意跟儲存值相反：存的是「已關閉」，開關顯示的是「要不要顯示」
+  const [disclaimerOn, setDisclaimerOn] = useState(true);
+
+  useEffect(() => {
+    AsyncStorage.getItem(AI_DISCLAIMER_KEY)
+      .then((v) => setDisclaimerOn(v !== '1'))
+      .catch(() => {}); // 讀取失敗就維持預設的開啟
+  }, []);
+
+  const toggleDisclaimer = (next: boolean) => {
+    setDisclaimerOn(next);
+    // 開啟 = 移除「已關閉」標記，讓 AskAIScreen 回到預設顯示
+    const op = next
+      ? AsyncStorage.removeItem(AI_DISCLAIMER_KEY)
+      : AsyncStorage.setItem(AI_DISCLAIMER_KEY, '1');
+    op.catch(() => {
+      setDisclaimerOn(!next);
+      Alert.alert('設定失敗', '請稍後再試');
+    });
+  };
 
   const handleVisibilityPress = () => {
     const options = ['取消', '公開', '限自己'];
@@ -120,6 +143,29 @@ export default function PrivacySecurityScreen({ navigation }: Props) {
               </View>
               <MaterialIcons name="chevron-right" size={20} color={colors.onSurfaceVariant} />
             </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* AI 助理 */}
+        <View>
+          <Text style={styles.sectionTitle}>AI 助理</Text>
+          <View style={styles.card}>
+            <View style={styles.row}>
+              <View style={styles.rowIcon}>
+                <MaterialIcons name="info-outline" size={20} color={colors.primary} />
+              </View>
+              <View style={styles.rowText}>
+                <Text style={styles.rowLabel}>顯示免責聲明</Text>
+                <Text style={styles.rowDesc}>在 AI 助理頁面上方提醒 AI 回覆不構成獸醫診斷</Text>
+              </View>
+              <Switch
+                value={disclaimerOn}
+                onValueChange={toggleDisclaimer}
+                trackColor={{ false: colors.surfaceVariant, true: colors.primaryContainer }}
+                thumbColor={disclaimerOn ? colors.primary : colors.outline}
+                ios_backgroundColor={colors.surfaceVariant}
+              />
+            </View>
           </View>
         </View>
 

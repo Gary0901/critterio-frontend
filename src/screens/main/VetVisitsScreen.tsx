@@ -443,16 +443,41 @@ export default function VetVisitsScreen({ navigation, route }: Props) {
         {loading ? (
           <ActivityIndicator color={colors.primary} style={{ marginTop: 24 }} />
         ) : visits.length === 0 ? (
-          <Card style={{ alignItems: 'center', paddingVertical: 32, gap: 8 }}>
-            <MaterialIcons name="event-note" size={32} color={colors.outline} />
-            <Text style={styles.emptyText}>尚未記錄任何就醫紀錄</Text>
-            <Text style={styles.emptySub}>記錄看診日期、診所、用藥，需要時也可以順便上傳檢驗報告</Text>
+          <Card style={styles.emptyCard}>
+            <View style={styles.emptyIconWrap}>
+              <MaterialIcons name="favorite" size={30} color={colors.primary} />
+            </View>
+            <Text style={styles.emptyText}>還沒有就醫紀錄</Text>
+            <Text style={styles.emptySub}>
+              把每次看診記下來，之後回診或換醫生時，過去的用藥與檢驗數值都找得到。
+            </Text>
+
+            <View style={styles.emptyHints}>
+              {[
+                { icon: 'photo-camera' as const, text: '拍下檢驗單，自動整理成項目表' },
+                { icon: 'timeline' as const, text: '數值變化依時間排列，趨勢一目了然' },
+                { icon: 'event' as const, text: '可同步到行事曆，回診不會忘' },
+              ].map((h) => (
+                <View key={h.text} style={styles.emptyHintRow}>
+                  <MaterialIcons name={h.icon} size={16} color={colors.secondary} />
+                  <Text style={styles.emptyHintText}>{h.text}</Text>
+                </View>
+              ))}
+            </View>
           </Card>
         ) : (
-          visits.map((v) => {
+          visits.map((v, vIdx) => {
             const abnormalCount = v.items.filter((i) => i.status === 'HIGH' || i.status === 'LOW').length;
+            const statusColor = makeStatusColor(colors);
             return (
-              <Card key={v.id} style={styles.visitCard}>
+              /* 時間軸：左側圓點串成一條線，讓多次就診看起來是一段病程而不是散落的卡片 */
+              <View key={v.id} style={styles.timelineRow}>
+                <View style={styles.rail}>
+                  <View style={[styles.railDot, abnormalCount > 0 && { backgroundColor: colors.error }]} />
+                  {vIdx < visits.length - 1 && <View style={styles.railLine} />}
+                </View>
+
+                <Card style={styles.visitCard}>
                 <View style={styles.visitHead}>
                   <Text style={styles.visitDate}>{formatVisitDate(v.visitDate)}</Text>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
@@ -512,19 +537,24 @@ export default function VetVisitsScreen({ navigation, route }: Props) {
                     </TouchableOpacity>
                     {expandedIds.has(v.id) && v.items.map((item, i) => (
                       <View key={i} style={styles.itemRow}>
+                        {/* 左側色條讓異常項目在一長串數值中一眼跳出來，不必逐行讀文字 */}
+                        <View style={[styles.itemBar, { backgroundColor: statusColor[item.status] }]} />
                         <View style={{ flex: 1 }}>
                           <Text style={styles.itemName}>{item.itemName}{item.abbreviation ? `（${item.abbreviation}）` : ''}</Text>
                           <Text style={styles.itemExplain}>{item.plainExplanation}</Text>
                         </View>
-                        <View style={{ alignItems: 'flex-end' }}>
-                          <Text style={[styles.itemValue, { color: makeStatusColor(colors)[item.status] }]}>{item.value} {item.unit}</Text>
-                          <Text style={[styles.itemStatus, { color: makeStatusColor(colors)[item.status] }]}>{STATUS_LABEL[item.status]}</Text>
+                        <View style={{ alignItems: 'flex-end', gap: 3 }}>
+                          <Text style={[styles.itemValue, { color: statusColor[item.status] }]}>{item.value} {item.unit}</Text>
+                          <View style={[styles.itemStatusPill, { backgroundColor: statusColor[item.status] + '1F' }]}>
+                            <Text style={[styles.itemStatus, { color: statusColor[item.status] }]}>{STATUS_LABEL[item.status]}</Text>
+                          </View>
                         </View>
                       </View>
                     ))}
                   </>
                 )}
-              </Card>
+                </Card>
+              </View>
             );
           })
         )}
@@ -758,10 +788,40 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
 
   content: { paddingHorizontal: 20, paddingBottom: 100, gap: 16 },
 
-  emptyText: { fontFamily: FontFamily.headlineSemiBold, fontSize: FontSize.bodyMD, color: c.onSurface },
-  emptySub: { fontFamily: FontFamily.bodyMedium, fontSize: FontSize.labelMD, color: c.onSurfaceVariant, textAlign: 'center' },
+  emptyCard: { alignItems: 'center', paddingVertical: 28, gap: 8 },
+  emptyIconWrap: {
+    width: 60, height: 60, borderRadius: 30,
+    backgroundColor: c.primaryFixed,
+    alignItems: 'center', justifyContent: 'center',
+    marginBottom: 4,
+  },
+  emptyHints: {
+    alignSelf: 'stretch',
+    gap: 10,
+    marginTop: 14,
+    paddingTop: 14,
+    borderTopWidth: 1,
+    borderTopColor: c.surfaceVariant,
+  },
+  emptyHintRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  emptyHintText: { flex: 1, fontFamily: FontFamily.bodyMedium, fontSize: FontSize.labelMD, color: c.onSurfaceVariant },
+  emptyText: { fontFamily: FontFamily.headlineBold, fontSize: FontSize.bodyLG, color: c.onSurface },
+  emptySub: { fontFamily: FontFamily.bodyMedium, fontSize: FontSize.labelMD, color: c.onSurfaceVariant, textAlign: 'center', lineHeight: 20 },
 
-  visitCard: { gap: 8 },
+  // 時間軸
+  timelineRow: { flexDirection: 'row', gap: 12 },
+  rail: { width: 12, alignItems: 'center', paddingTop: 20 },
+  railDot: {
+    width: 12, height: 12, borderRadius: 6,
+    backgroundColor: c.primary,
+    borderWidth: 2.5, borderColor: c.background,
+  },
+  // 連到下一張卡；最後一筆不畫，線才不會懸空。
+  // flex:1 只填得滿卡片本身，卡片之間還隔著 content 的 gap(16) 與下一個圓點的 paddingTop(20)，
+  // 所以要用負的 marginBottom 把線往下延伸 36pt，才會真的連到下一個圓點而不是斷開。
+  railLine: { flex: 1, width: 2, backgroundColor: c.surfaceVariant, marginTop: 2, marginBottom: -36 },
+
+  visitCard: { flex: 1, gap: 8 },
   visitHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   visitDate: { fontFamily: FontFamily.headlineSemiBold, fontSize: FontSize.bodyMD, color: c.onSurface },
   badge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 9999 },
@@ -771,11 +831,13 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   diagnosisText: { fontFamily: FontFamily.bodyMedium, fontSize: FontSize.labelMD, color: c.onSurface },
   medRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
 
-  itemRow: { flexDirection: 'row', gap: 12, paddingVertical: 4, borderTopWidth: 1, borderTopColor: c.surfaceContainerHigh },
+  itemRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8, borderTopWidth: 1, borderTopColor: c.surfaceContainerHigh },
+  itemBar: { width: 3, alignSelf: 'stretch', borderRadius: 2, minHeight: 28 },
+  itemStatusPill: { paddingHorizontal: 7, paddingVertical: 2, borderRadius: 9999 },
   itemName: { fontFamily: FontFamily.headlineSemiBold, fontSize: FontSize.bodyMD, color: c.onSurface },
   itemExplain: { fontFamily: FontFamily.bodyMedium, fontSize: FontSize.labelMD, color: c.onSurfaceVariant, marginTop: 2 },
   itemValue: { fontFamily: FontFamily.headlineSemiBold, fontSize: FontSize.bodyMD },
-  itemStatus: { fontFamily: FontFamily.bodyMedium, fontSize: FontSize.labelSM, marginTop: 2 },
+  itemStatus: { fontFamily: FontFamily.bodyBold, fontSize: FontSize.labelSM },
   expandToggle: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 2, paddingVertical: 6, marginTop: 2 },
   expandToggleText: { fontFamily: FontFamily.headlineMedium, fontSize: FontSize.labelMD, color: c.primary },
 

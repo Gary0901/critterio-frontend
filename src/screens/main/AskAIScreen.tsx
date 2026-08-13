@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   FlatList,
+  ScrollView,
   TextInput,
   TouchableOpacity,
   KeyboardAvoidingView,
@@ -11,21 +12,97 @@ import {
   ActivityIndicator,
   Image,
   Animated,
+  Easing,
   Alert,
+  Modal,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { MaterialIcons } from '@expo/vector-icons';
+import { MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
-import Chip from '../../components/ui/Chip';
 import { ThemeColors } from '../../constants/themes';
 import { useTheme, useThemedStyles } from '../../context/ThemeContext';
 import { FontFamily, FontSize } from '../../constants/typography';
 import { listAiConversations, createAiConversation, getAiConversation, streamAiMessage, getPets } from '../../api';
 import { AiMessage, Conversation, Pet } from '../../types';
+import { buildPetColorMap } from '../../constants/petColors';
+import { speciesIcon } from '../../constants/species';
+import { AI_DISCLAIMER_KEY } from '../../constants/storageKeys';
 
-const QUICK_TAGS = ['飲食', '行為', '健康建議'];
+/**
+ * 主題快捷。選中時會把 `[標籤] ` 前綴加在訊息前送給 AI（見 send() 的 tagContext），
+ * 所以 label 同時是顯示文字與送出的關鍵字，改字會改變 AI 收到的提示。
+ */
+const QUICK_TOPICS = [
+  {
+    key: 'diet', label: '飲食', icon: 'food-drumstick',
+    withPet: ['{pet} 目前的體重適合吃多少飼料？', '{pet} 最近的飲食紀錄看起來正常嗎？'],
+    general: ['幼犬和成犬的餵食次數差在哪？', '哪些人類食物對寵物有危險？'],
+  },
+  {
+    key: 'behavior', label: '行為', icon: 'paw',
+    withPet: ['{pet} 最近的日常紀錄有出現行為變化嗎？', '{pet} 這個年紀常見的行為問題有哪些？'],
+    general: ['寵物一直舔腳掌是什麼原因？', '怎麼減少寵物的分離焦慮？'],
+  },
+  {
+    key: 'health', label: '健康建議', icon: 'heart-pulse',
+    withPet: ['{pet} 最近的體重變化正常嗎？', '{pet} 上次健檢有什麼要注意的？'],
+    general: ['寵物需要定期做哪些健康檢查？', '疫苗多久要補打一次？'],
+  },
+  {
+    key: 'care', label: '日常照護', icon: 'shower',
+    withPet: ['{pet} 多久該洗一次澡？', '{pet} 這個年紀的照護重點是什麼？'],
+    general: ['貓咪需要洗澡嗎？', '寵物指甲多久剪一次比較好？'],
+  },
+] satisfies {
+  key: string;
+  label: string;
+  icon: React.ComponentProps<typeof MaterialCommunityIcons>['name'];
+  /** 已綁定寵物時用。這些問題會讓 AI 動用查詢紀錄的工具，{pet} 會替換成寵物名字 */
+  withPet: string[];
+  /** 未綁定寵物時用。不依賴 App 內資料，純知識問答 */
+  general: string[];
+}[];
+
 const SIDEBAR_WIDTH = 280;
 const NEW_CONV_ID = '__new__';
+
+/**
+ * 諮詢對象的圓形頭像。外環用寵物的識別色（跟行事曆、我的寵物同一套 petColorAt）。
+ * 沒照片就退回物種圖示；未指定寵物是虛線外環 + 爪印。
+ */
+function PetAvatar({
+  pet, color, styles, colors, size = 34,
+}: {
+  pet: Pet | null;
+  color: string;
+  styles: ReturnType<typeof makeStyles>;
+  colors: ThemeColors;
+  size?: number;
+}) {
+  const ring = {
+    width: size,
+    height: size,
+    borderRadius: size / 2,
+    borderColor: pet ? color : colors.outlineVariant,
+    borderStyle: (pet ? 'solid' : 'dashed') as 'solid' | 'dashed',
+  };
+
+  return (
+    <View style={[styles.avatarRing, ring]}>
+      {pet?.photoUrl ? (
+        <Image source={{ uri: pet.photoUrl }} style={styles.avatarImg} resizeMode="cover" />
+      ) : (
+        <MaterialCommunityIcons
+          name={pet ? speciesIcon(pet.species) : 'paw'}
+          size={size * 0.5}
+          color={pet ? color : colors.onSurfaceVariant}
+        />
+      )}
+    </View>
+  );
+}
 
 // AI 回覆偶爾會用 **文字** 標粗體，聊天氣泡目前只是純文字渲染，這裡把 ** 語法轉成真的粗體
 function renderMarkdownBold(content: string, styles: ReturnType<typeof makeStyles>) {
@@ -41,7 +118,7 @@ function renderMarkdownBold(content: string, styles: ReturnType<typeof makeStyle
 }
 
 export default function AskAIScreen() {
-  const { colors } = useTheme();
+  const { colors, theme } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const insets = useSafeAreaInsets();
 
@@ -59,11 +136,122 @@ export default function AskAIScreen() {
   const [pets, setPets] = useState<Pet[]>([]);
   const [selectedPetId, setSelectedPetId] = useState<string | null>(null);
   const [pendingImage, setPendingImage] = useState<string | null>(null);
-  const [hasSent, setHasSent] = useState(false);
+  const [petPickerOpen, setPetPickerOpen] = useState(false);
   const flatListRef = useRef<FlatList>(null);
+
+  // 免責聲明預設顯示，關掉後記在本機、不再出現。
+  // null = 偏好還沒讀完：先不渲染，避免已關閉的使用者看到它閃一下才消失
+  const [disclaimerVisible, setDisclaimerVisible] = useState<boolean | null>(null);
+
+  // 用 useFocusEffect 而非只在掛載時讀：使用者可能到「隱私與安全」把它開回來，
+  // 這頁在 tab navigator 裡不會重新掛載，靠 focus 才能拿到最新偏好
+  useFocusEffect(
+    useCallback(() => {
+      AsyncStorage.getItem(AI_DISCLAIMER_KEY)
+        .then((v) => setDisclaimerVisible(v !== '1'))
+        .catch(() => setDisclaimerVisible(true)); // 讀取失敗就照預設顯示
+    }, []),
+  );
+
+  const dismissDisclaimer = () => {
+    setDisclaimerVisible(false);
+    AsyncStorage.setItem(AI_DISCLAIMER_KEY, '1').catch(() => {});
+  };
 
   const activeConv = conversations.find((c) => c.id === activeConvId) ?? conversations[0];
   const messages = activeConv.messages;
+
+  // 對話一旦建立，後端的 conv.petId 就是不可變的事實來源；
+  // 還沒建立（新對話）時才用本地的 selectedPetId。
+  const activePetId = activeConv.petId ?? selectedPetId;
+  const activePet = pets.find((p) => p.id === activePetId) ?? null;
+  const petColorMap = useMemo(() => buildPetColorMap(pets, theme.key), [pets, theme.key]);
+  const activePetColor = activePet ? petColorMap[activePet.id] : colors.outline;
+
+  // 已經有訊息 = 後端已綁定，換寵物只能靠開新對話（後端沒有改 petId 的 endpoint）
+  const petLocked = activeConv.messages.length > 0;
+
+  // 展開清單：所有寵物 + 「不指定」。id 為 null 代表不指定
+  const pickerOptions = useMemo(
+    () => [
+      ...pets.map((p) => ({ id: p.id as string | null, name: p.name, pet: p, color: petColorMap[p.id] })),
+      { id: null as string | null, name: '不指定寵物', pet: null as Pet | null, color: colors.outline },
+    ],
+    [pets, petColorMap, colors.outline],
+  );
+
+  /**
+   * 空狀態的範例問題。
+   * 有綁寵物就給會用到真實紀錄的問題（讓使用者第一次就看到 function calling 的價值），
+   * 沒綁就給不依賴 App 資料的一般問題，避免問了卻得到空泛回答。
+   * 沒選主題時每個主題各挑第一句；選了主題就展開該主題的全部。
+   */
+  const starters = useMemo(() => {
+    const fill = (q: string) => q.replace('{pet}', activePet?.name ?? '');
+    const pick = (t: (typeof QUICK_TOPICS)[number]) => (activePet ? t.withPet : t.general);
+
+    const topics = selectedTag
+      ? QUICK_TOPICS.filter((t) => t.label === selectedTag)
+      : QUICK_TOPICS;
+
+    return topics.flatMap((t) =>
+      (selectedTag ? pick(t) : pick(t).slice(0, 1)).map((q) => ({
+        key: `${t.key}-${q}`,
+        icon: t.icon,
+        text: fill(q),
+      })),
+    );
+  }, [selectedTag, activePet]);
+
+  // 一個 Animated.Value 驅動全部項目，各項用不同 inputRange 做出逐項延遲
+  const pickerAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (petPickerOpen) {
+      pickerAnim.setValue(0);
+      Animated.timing(pickerAnim, {
+        toValue: 1,
+        duration: 260,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }).start();
+    }
+  }, [petPickerOpen]);
+
+  const choosePet = (petId: string | null) => {
+    if (petId === activePetId) {
+      setPetPickerOpen(false);
+      return;
+    }
+
+    if (petLocked) {
+      // 後端的 conv.petId 寫入後改不了，換對象只能另起一段對話。
+      // 這是會跳離目前對話的動作，先確認避免誤觸；
+      // 面板不先關掉，取消時使用者還留在挑選畫面。
+      const name = petId ? pets.find((p) => p.id === petId)?.name : null;
+      Alert.alert(
+        '另開新對話',
+        name
+          ? `要為 ${name} 另開一段新對話嗎？目前這段對話會保留在側邊欄。`
+          : '要另開一段不指定寵物的新對話嗎？目前這段對話會保留在側邊欄。',
+        [
+          { text: '取消', style: 'cancel' },
+          {
+            text: '另開新對話',
+            onPress: () => {
+              setPetPickerOpen(false);
+              newConversation();
+              setSelectedPetId(petId);
+            },
+          },
+        ],
+      );
+      return;
+    }
+
+    setPetPickerOpen(false);
+    setSelectedPetId(petId);
+  };
 
   useEffect(() => {
     getPets().then((res) => { if (res.success) setPets(res.data); });
@@ -102,12 +290,11 @@ export default function AskAIScreen() {
       loadedConvIds.current.add(id);
       const res = await getAiConversation(id);
       if (res.success) {
-        setConversations((prev) => prev.map((c) => c.id === id ? { ...c, messages: res.data.messages } : c));
-        setHasSent(res.data.messages.length > 0);
+        // petId 也要一起帶進來，頭像才知道這段對話綁的是誰
+        setConversations((prev) =>
+          prev.map((c) => c.id === id ? { ...c, messages: res.data.messages, petId: res.data.petId } : c),
+        );
       }
-    } else {
-      const conv = conversations.find((c) => c.id === id);
-      setHasSent((conv?.messages.length ?? 0) > 0);
     }
   };
 
@@ -119,7 +306,6 @@ export default function AskAIScreen() {
       setConversations((prev) => [{ id: NEW_CONV_ID, title: '新對話', createdAt: '剛剛', messages: [] }, ...prev]);
     }
     setActiveConvId(NEW_CONV_ID);
-    setHasSent(false);
     setInput('');
     setPendingImage(null);
     setSelectedTag(null);
@@ -152,7 +338,6 @@ export default function AskAIScreen() {
   const send = async () => {
     if (!input.trim() && !pendingImage) return;
 
-    const selectedPet = pets.find((p) => p.id === selectedPetId);
     const tagContext = selectedTag ? `[${selectedTag}] ` : '';
     const messageContent = input.trim() || '（已附上圖片）';
 
@@ -161,7 +346,7 @@ export default function AskAIScreen() {
       role: 'user',
       content: messageContent,
       imageUrl: pendingImage ?? undefined,
-      petName: selectedPet?.name,
+      petName: activePet?.name,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     };
 
@@ -181,7 +366,6 @@ export default function AskAIScreen() {
 
     setInput('');
     setPendingImage(null);
-    setHasSent(true);
     setLoading(true);
     scrollToBottom();
 
@@ -189,11 +373,14 @@ export default function AskAIScreen() {
     try {
       // 第一則訊息時才建立後端對話
       if (convId === NEW_CONV_ID) {
-        const createRes = await createAiConversation(selectedPetId ?? undefined);
+        const createRes = await createAiConversation(activePetId ?? undefined);
         if (!createRes.success) throw new Error('建立對話失敗');
         convId = createRes.data.id;
         loadedConvIds.current.add(convId);
-        setConversations((prev) => prev.map((c) => c.id === NEW_CONV_ID ? { ...c, id: convId } : c));
+        // 一併寫回 petId：這是後端剛剛綁定的結果，之後這段對話都以它為準
+        setConversations((prev) =>
+          prev.map((c) => c.id === NEW_CONV_ID ? { ...c, id: convId, petId: createRes.data.petId } : c),
+        );
         setActiveConvId(convId);
       }
 
@@ -300,16 +487,34 @@ export default function AskAIScreen() {
               </Text>
             )}
           </View>
-          <View style={styles.iconBtnSm} />
+          <TouchableOpacity
+            style={styles.iconBtnSm}
+            onPress={() => setPetPickerOpen(true)}
+            activeOpacity={0.75}
+            accessibilityRole="button"
+            accessibilityLabel={activePet ? `目前諮詢對象 ${activePet.name}，點擊更換` : '選擇諮詢的寵物'}
+          >
+            <PetAvatar pet={activePet} color={activePetColor} styles={styles} colors={colors} />
+          </TouchableOpacity>
         </View>
 
-        {/* Disclaimer */}
-        <View style={styles.disclaimer}>
-          <MaterialIcons name="info-outline" size={13} color={colors.onSurfaceVariant} />
-          <Text style={styles.disclaimerText}>
-            AI 回覆僅供健康參考，不構成獸醫診斷或醫療建議。緊急情況請立即就醫。
-          </Text>
-        </View>
+        {/* Disclaimer — 可關閉，關掉後記在本機 */}
+        {disclaimerVisible && (
+          <View style={styles.disclaimer}>
+            <MaterialIcons name="info-outline" size={13} color={colors.onSurfaceVariant} />
+            <Text style={styles.disclaimerText}>
+              AI 回覆僅供健康參考，不構成獸醫診斷或醫療建議。緊急情況請立即就醫。
+            </Text>
+            <TouchableOpacity
+              onPress={dismissDisclaimer}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              accessibilityRole="button"
+              accessibilityLabel="關閉免責聲明"
+            >
+              <MaterialIcons name="close" size={15} color={colors.onSurfaceVariant} />
+            </TouchableOpacity>
+          </View>
+        )}
 
         {/* Messages */}
         <FlatList
@@ -350,6 +555,34 @@ export default function AskAIScreen() {
               </View>
             </View>
           )}
+          ListEmptyComponent={
+            <View style={styles.emptyWrap}>
+              <View style={styles.emptyIcon}>
+                <MaterialIcons name="auto-awesome" size={24} color={colors.primary} />
+              </View>
+              <Text style={styles.emptyTitle}>想問什麼？</Text>
+              <Text style={styles.emptySubtitle}>
+                {activePet
+                  ? `已選 ${activePet.name}，可以問問牠的體重、日誌或就醫紀錄。`
+                  : '選一個主題，或直接輸入你的問題。'}
+              </Text>
+
+              {starters.map((s) => (
+                <TouchableOpacity
+                  key={s.key}
+                  style={styles.starterCard}
+                  onPress={() => setInput(s.text)}
+                  activeOpacity={0.75}
+                  accessibilityRole="button"
+                  accessibilityLabel={`使用範例問題：${s.text}`}
+                >
+                  <MaterialCommunityIcons name={s.icon} size={17} color={colors.secondary} />
+                  <Text style={styles.starterText}>{s.text}</Text>
+                  <MaterialIcons name="arrow-outward" size={15} color={colors.outlineVariant} />
+                </TouchableOpacity>
+              ))}
+            </View>
+          }
           ListFooterComponent={
             loading ? (
               <View style={styles.typingIndicator}>
@@ -360,49 +593,37 @@ export default function AskAIScreen() {
           }
         />
 
-        {/* Row 1: pet chips — only when nothing selected and not yet sent */}
-        {pets.length > 0 && !selectedPetId && !selectedTag && !hasSent && (
-          <View style={styles.chipRow}>
-            {pets.map((pet) => (
+        {/* 主題快捷：選中時只留該顆（可再點一次取消） */}
+        <View style={styles.chipRow}>
+          {(selectedTag
+            ? QUICK_TOPICS.filter((t) => t.label === selectedTag)
+            : QUICK_TOPICS
+          ).map((topic) => {
+            const active = selectedTag === topic.label;
+            return (
               <TouchableOpacity
-                key={pet.id}
-                style={styles.petChipUnselected}
-                onPress={() => setSelectedPetId(pet.id)}
+                key={topic.key}
+                style={[styles.topicChip, active && styles.topicChipActive]}
+                onPress={() => setSelectedTag(active ? null : topic.label)}
                 activeOpacity={0.75}
+                accessibilityRole="button"
+                accessibilityState={{ selected: active }}
               >
-                <Text style={styles.petChipUnselectedLabel}>{pet.name}</Text>
+                <MaterialCommunityIcons
+                  name={topic.icon}
+                  size={15}
+                  color={active ? colors.onSecondaryContainer : colors.secondary}
+                />
+                <Text style={[styles.topicChipLabel, active && styles.topicChipLabelActive]}>
+                  {topic.label}
+                </Text>
+                {active && (
+                  <MaterialIcons name="close" size={13} color={colors.onSecondaryContainer} />
+                )}
               </TouchableOpacity>
-            ))}
-          </View>
-        )}
-
-        {/* Row 2: selected chips — hidden when nothing selected and already sent */}
-        {(selectedPetId || selectedTag || !hasSent) && (
-          <View style={styles.chipRow}>
-            {selectedPetId &&
-              (() => {
-                const pet = pets.find((p) => p.id === selectedPetId);
-                return pet ? (
-                  <TouchableOpacity
-                    key={pet.id}
-                    style={styles.petChip}
-                    onPress={() => setSelectedPetId(null)}
-                    activeOpacity={0.75}
-                  >
-                    <Text style={styles.petChipLabel}>{pet.name}</Text>
-                    <MaterialIcons name="close" size={11} color={colors.onSecondaryContainer} />
-                  </TouchableOpacity>
-                ) : null;
-              })()}
-            {selectedTag ? (
-              <Chip label={selectedTag} selected onPress={() => setSelectedTag(null)} />
-            ) : (
-              QUICK_TAGS.map((tag) => (
-                <Chip key={tag} label={tag} selected={false} onPress={() => setSelectedTag(tag)} />
-              ))
-            )}
-          </View>
-        )}
+            );
+          })}
+        </View>
 
         {/* Pending image preview */}
         {pendingImage && (
@@ -451,6 +672,81 @@ export default function AskAIScreen() {
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
+
+      {/* 諮詢對象挑選：從右上角頭像往下垂直展開 */}
+      <Modal
+        visible={petPickerOpen}
+        transparent
+        animationType="none"
+        onRequestClose={() => setPetPickerOpen(false)}
+      >
+        <TouchableOpacity
+          style={StyleSheet.absoluteFill}
+          activeOpacity={1}
+          onPress={() => setPetPickerOpen(false)}
+        >
+          <Animated.View
+            style={[StyleSheet.absoluteFill, styles.pickerScrim, { opacity: pickerAnim }]}
+            pointerEvents="none"
+          />
+
+          <View style={[styles.pickerColumn, { top: insets.top + 56, bottom: insets.bottom + 16 }]}>
+            <ScrollView
+              style={styles.pickerScroll}
+              contentContainerStyle={styles.pickerScrollContent}
+              showsVerticalScrollIndicator={false}
+            >
+            {pickerOptions.map((opt, i) => {
+              const active = opt.id === activePetId;
+              // 用單一 Animated.Value 帶出逐項延遲：每項起跑點往後推一格
+              const start = (i / (pickerOptions.length + 1)) * 0.7;
+              const rowStyle = {
+                opacity: pickerAnim.interpolate({
+                  inputRange: [start, start + 0.3],
+                  outputRange: [0, 1],
+                  extrapolate: 'clamp' as const,
+                }),
+                transform: [{
+                  translateY: pickerAnim.interpolate({
+                    inputRange: [start, start + 0.3],
+                    outputRange: [-12, 0],
+                    extrapolate: 'clamp' as const,
+                  }),
+                }],
+              };
+
+              return (
+                <Animated.View key={opt.id ?? '__none__'} style={rowStyle}>
+                  <TouchableOpacity
+                    style={styles.pickerItem}
+                    onPress={() => choosePet(opt.id)}
+                    activeOpacity={0.8}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: active }}
+                    accessibilityLabel={opt.name}
+                  >
+                    <View style={[styles.pickerLabel, active && styles.pickerLabelActive]}>
+                      <Text style={[styles.pickerLabelText, active && styles.pickerLabelTextActive]}>
+                        {opt.name}
+                      </Text>
+                    </View>
+                    <View style={[styles.pickerAvatarWrap, active && { borderColor: opt.color }]}>
+                      <PetAvatar pet={opt.pet} color={opt.color} styles={styles} colors={colors} size={56} />
+                    </View>
+                  </TouchableOpacity>
+                </Animated.View>
+              );
+            })}
+            </ScrollView>
+
+            {petLocked && (
+              <Animated.View style={[styles.pickerHint, { opacity: pickerAnim }]}>
+                <Text style={styles.pickerHintText}>換對象會另開一段新對話</Text>
+              </Animated.View>
+            )}
+          </View>
+        </TouchableOpacity>
+      </Modal>
 
       {/* Sidebar overlay — outside KAV so it covers full screen */}
       {sidebarOpen && (
@@ -557,6 +853,53 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
 
   // Messages
   messageList: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 16, gap: 12 },
+
+  // 空狀態：新對話時的範例問題
+  emptyWrap: {
+    alignItems: 'center',
+    paddingTop: 32,
+    paddingHorizontal: 8,
+    gap: 10,
+  },
+  emptyIcon: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: c.primaryFixed,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyTitle: {
+    fontFamily: FontFamily.headlineBold,
+    fontSize: FontSize.headlineMD,
+    color: c.onSurface,
+  },
+  emptySubtitle: {
+    fontFamily: FontFamily.bodyMedium,
+    fontSize: FontSize.labelMD,
+    color: c.onSurfaceVariant,
+    textAlign: 'center',
+    marginBottom: 6,
+  },
+  starterCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    alignSelf: 'stretch',
+    paddingHorizontal: 14,
+    paddingVertical: 13,
+    borderRadius: 16,
+    backgroundColor: c.surfaceContainerLow,
+    borderWidth: 1,
+    borderColor: c.surfaceVariant,
+  },
+  starterText: {
+    flex: 1,
+    fontFamily: FontFamily.bodyMedium,
+    fontSize: FontSize.labelMD,
+    color: c.onSurface,
+    lineHeight: 20,
+  },
   bubble: { flexDirection: 'row', alignItems: 'flex-end', gap: 8 },
   userBubble: { justifyContent: 'flex-end' },
   aiBubble: { justifyContent: 'flex-start' },
@@ -608,32 +951,91 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     color: c.onSurfaceVariant,
   },
 
-  // Chip rows
-  petChipUnselected: {
+  // 諮詢對象頭像
+  avatarRing: {
+    borderWidth: 2,
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: c.surfaceContainerLow,
+  },
+  avatarImg: { width: '100%', height: '100%' },
+
+  // 諮詢對象展開清單（從右上角頭像往下）
+  pickerScrim: { backgroundColor: 'rgba(0,0,0,0.35)' },
+  pickerColumn: {
+    position: 'absolute',
+    right: 12,
+    alignItems: 'flex-end',
+  },
+  // flexShrink 讓清單短時貼著內容、長時才收縮成可捲動，提示語始終跟在最後一項下方
+  pickerScroll: { flexShrink: 1 },
+  pickerScrollContent: {
+    alignItems: 'flex-end',
+    gap: 14,
+    paddingBottom: 4,
+  },
+  pickerItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  pickerLabel: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 9999,
+    backgroundColor: c.surfaceContainerLowest,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.14,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  pickerLabelActive: { backgroundColor: c.secondaryContainer },
+  pickerLabelText: {
+    fontFamily: FontFamily.headlineSemiBold,
+    fontSize: FontSize.bodyMD,
+    color: c.onSurface,
+  },
+  pickerLabelTextActive: { color: c.onSecondaryContainer },
+  // 選中的那顆多一圈識別色外框，跟其他項拉開差別
+  pickerAvatarWrap: {
+    padding: 3,
+    borderRadius: 9999,
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  pickerHint: {
+    marginTop: 4,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 9999,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+  },
+  pickerHintText: {
+    fontFamily: FontFamily.bodyMedium,
+    fontSize: FontSize.labelMD,
+    color: '#FFFFFF',
+  },
+
+  // 主題快捷晶片
+  topicChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
     paddingHorizontal: 12,
-    paddingVertical: 4,
+    paddingVertical: 9,
     borderRadius: 9999,
     backgroundColor: `${c.secondary}1A`,
   },
-  petChipUnselectedLabel: {
+  topicChipActive: { backgroundColor: c.secondaryContainer },
+  topicChipLabel: {
     fontFamily: FontFamily.headlineMedium,
     fontSize: FontSize.labelSM,
     color: c.secondary,
   },
-  petChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 9999,
-    backgroundColor: c.secondaryContainer,
-  },
-  petChipLabel: {
-    fontFamily: FontFamily.headlineMedium,
-    fontSize: FontSize.labelSM,
-    color: c.onSecondaryContainer,
-  },
+  topicChipLabelActive: { color: c.onSecondaryContainer },
+
   chipRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',

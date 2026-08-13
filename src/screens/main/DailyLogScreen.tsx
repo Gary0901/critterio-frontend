@@ -17,6 +17,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RouteProp } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
+import { LinearGradient } from 'expo-linear-gradient';
 import { RootStackParamList } from '../../types/navigation';
 import { ThemeColors } from '../../constants/themes';
 import { compressForUpload } from '../../utils/compressImage';
@@ -344,11 +345,23 @@ export default function DailyLogScreen({ navigation, route }: Props) {
             <Text style={styles.sectionLabel}>今日一拍</Text>
             <View style={styles.snapWrap}>
               <Image source={{ uri: diaryPhoto.url }} style={styles.snapPhoto} resizeMode="contain" />
-              {!!diaryPhoto.time && (
-                <View style={styles.snapTimeBadge}>
-                  <Text style={styles.snapTime}>{diaryPhoto.time}</Text>
-                </View>
-              )}
+              {/* 底部漸層遮罩：照片下緣壓一層暗色，時間與心情才不會浮在亮處看不清 */}
+              <LinearGradient
+                colors={['transparent', 'rgba(0,0,0,0.55)']}
+                style={styles.snapScrim}
+                pointerEvents="none"
+              />
+              <View style={styles.snapFooter}>
+                {!!diaryPhoto.time && <Text style={styles.snapTime}>{diaryPhoto.time}</Text>}
+                {selectedEntry.mood && selectedEntry.mood.length > 0 && (
+                  <Text style={styles.snapMood}>
+                    {selectedEntry.mood
+                      .map((id) => MOODS.find((x) => x.id === id)?.emoji)
+                      .filter(Boolean)
+                      .join(' ')}
+                  </Text>
+                )}
+              </View>
             </View>
 
             <View style={styles.diaryCard}>
@@ -357,15 +370,7 @@ export default function DailyLogScreen({ navigation, route }: Props) {
                 <Text style={styles.entryNum}>記錄 #{selectedEntry.entryNumber ?? '—'}</Text>
               </View>
               {!!selectedEntry.title && <Text style={styles.diaryTitle}>{selectedEntry.title}</Text>}
-              {selectedEntry.mood && selectedEntry.mood.length > 0 && (
-                <View style={styles.moodRow}>
-                  <Text style={styles.moodLabel}>心情</Text>
-                  {selectedEntry.mood.map((id) => {
-                    const m = MOODS.find((x) => x.id === id);
-                    return m ? <Text key={id} style={styles.moodEmoji}>{m.emoji}</Text> : null;
-                  })}
-                </View>
-              )}
+              {/* 心情已經顯示在照片下緣，這裡不再重複 */}
               {!!selectedEntry.note && <Text style={styles.diaryNote}>{selectedEntry.note}</Text>}
               {selectedEntry.hashtags && selectedEntry.hashtags.length > 0 && (
                 <View style={styles.hashtagRow}>
@@ -400,8 +405,15 @@ export default function DailyLogScreen({ navigation, route }: Props) {
                 <Image source={{ uri: photoUri }} style={styles.previewPhoto} resizeMode="cover" />
               ) : (
                 <>
+                  {/* 品牌色漸層取代原本的灰底，空狀態才不會像「壞掉的區塊」 */}
+                  <LinearGradient
+                    colors={[colors.primaryFixed, colors.surfaceContainerHigh]}
+                    style={StyleSheet.absoluteFill}
+                    start={{ x: 0.5, y: 0 }}
+                    end={{ x: 0.5, y: 1 }}
+                  />
                   <View style={styles.cameraCircle}>
-                    <MaterialIcons name="photo-camera" size={34} color={colors.outline} />
+                    <MaterialIcons name="photo-camera" size={34} color={colors.primary} />
                   </View>
                   <Text style={styles.addPhotoTitle}>新增今日照片</Text>
                   <Text style={styles.addPhotoSub}>記錄與 {petName} 的精彩時光</Text>
@@ -581,15 +593,19 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     backgroundColor: '#111',
   },
   snapPhoto: { width: '100%', height: '100%' },
-  snapTimeBadge: {
+  snapScrim: {
     position: 'absolute',
-    bottom: 8,
-    left: 8,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-    borderRadius: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
+    left: 0, right: 0, bottom: 0,
+    height: 88,
   },
+  snapFooter: {
+    position: 'absolute',
+    left: 14, right: 14, bottom: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  snapMood: { fontSize: 20 },
   snapTime: {
     fontFamily: FontFamily.headlineMedium,
     fontSize: FontSize.labelSM,
@@ -634,14 +650,6 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     color: c.onSurface,
     lineHeight: LineHeight.headlineMD,
   },
-  moodRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  moodLabel: {
-    fontFamily: FontFamily.headlineBold,
-    fontSize: FontSize.labelSM,
-    color: c.onSurfaceVariant,
-    letterSpacing: 1,
-  },
-  moodEmoji: { fontSize: 20 },
   diaryNote: {
     fontFamily: FontFamily.bodyMedium,
     fontSize: FontSize.bodyMD,
@@ -669,7 +677,8 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     backgroundColor: c.surfaceContainerHigh,
     borderWidth: 1.5,
     borderStyle: 'dashed',
-    borderColor: c.outlineVariant,
+    // 配合內層的品牌色漸層，虛線框也跟著暖起來，不然會像沒載入完的灰框
+    borderColor: c.primaryFixedDim,
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
@@ -680,6 +689,11 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     height: 72,
     borderRadius: 36,
     backgroundColor: c.surfaceContainerLowest,
+    shadowColor: c.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 10,
+    elevation: 3,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 4,

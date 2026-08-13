@@ -780,6 +780,8 @@ function mapAiConv(c: any): Conversation {
     id: String(c.id ?? c._id),
     title: c.title,
     createdAt: formatTimeAgo(c.updatedAt ?? c.createdAt),
+    // 三個 endpoint 都會回 petId，之前這裡沒接，AI 助理頁因此不知道對話綁了誰
+    petId: c.petId ? String(c.petId) : undefined,
     messages: (c.messages ?? []).map((m: any, i: number): AiMessage => ({
       id: m._id ? String(m._id) : `m${i}`,
       role: m.role,

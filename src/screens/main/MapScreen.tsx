@@ -131,7 +131,103 @@ const CATEGORY_TO_APITYPE: Partial<Record<FilterOption, string>> = {
   restaurant: 'restaurant',
 };
 
-function calcDistance(lat1: number, lon1: number, lat2: number, lon2: number): string {
+/** 兩點間距離（公尺）。Haversine 公式 */
+/**
+ * 照片氣泡的縮放門檻。latitudeDelta 越小代表放得越大，
+ * 換算成畫面高度大約是 delta × 111 公里：
+ *   0.008 → 約 0.9 km（要放到看得見店門口，太嚴）
+ *   0.02  → 約 2.2 km（街廓層級，目前值）
+ *   0.05  → 約 5.5 km（半個城區，合作店家一多會太雜）
+ * 因為只對合作店家開啟，畫面內的照片 marker 數量本來就少，可以放寬。
+ */
+const PHOTO_MARKER_MAX_DELTA = 0.02;
+
+/**
+ * 地圖標記。合作店家在放大後會換成照片氣泡，其餘維持圖示釘。
+ *
+ * tracksViewChanges 必須從 true 開始：marker 內容是被截成一張圖交給原生地圖的，
+ * 若一開始就 false，快照會在遠端照片載入完成前就拍好，氣泡永遠空白。
+ * 所以等 onLoad（或載入失敗）之後才關掉，關掉是為了效能——開著會每幀重繪。
+ */
+function PlaceMarker({
+  coordinate, place, isSelected, showPhoto, onPress, styles, colors,
+}: {
+  /**
+   * 必須以 prop 形式傳入，不能只靠 place.coordinate 在內部取用。
+   * react-native-map-clustering 的 isMarker() 是檢查「子元素的 props.coordinate」
+   * 來決定要不要納入叢集索引（見 lib/helpers.js）；少了這個 prop，
+   * 這個 marker 會被當成一般子元素直接渲染，整張地圖的叢集功能就會失效。
+   */
+  coordinate: { latitude: number; longitude: number };
+  place: Place;
+  isSelected: boolean;
+  showPhoto: boolean;
+  onPress: () => void;
+  styles: ReturnType<typeof makeStyles>;
+  colors: ThemeColors;
+}) {
+  const cfg = makeCategoryConfig(colors)[place.category];
+  const [photoSettled, setPhotoSettled] = useState(false);
+  // 外觀改變後短暫開啟重繪。選中時氣泡要放大、圖示釘要換外框色，
+  // 但 tracksViewChanges 若一直是 false，原生端沿用舊快照，畫面不會更新
+  const [redrawing, setRedrawing] = useState(false);
+
+  // 換回圖示釘時要重設，下次再放大才會重新等圖載入
+  useEffect(() => {
+    if (!showPhoto) setPhotoSettled(false);
+  }, [showPhoto]);
+
+  useEffect(() => {
+    setRedrawing(true);
+    const t = setTimeout(() => setRedrawing(false), 500);
+    return () => clearTimeout(t);
+  }, [showPhoto, isSelected]);
+
+  return (
+    <Marker
+      coordinate={coordinate}
+      onPress={onPress}
+      onSelect={onPress}
+      tracksViewChanges={redrawing || (showPhoto && !photoSettled)}
+    >
+      <View pointerEvents="none" style={[styles.pin, isSelected && styles.pinSelected]}>
+        {showPhoto ? (
+          <View style={[styles.photoBubble, isSelected && styles.photoBubbleSelected]}>
+            <Image
+              source={{ uri: place.photoUrl }}
+              style={styles.photoBubbleImg}
+              resizeMode="cover"
+              onLoad={() => setPhotoSettled(true)}
+              onError={() => setPhotoSettled(true)}
+            />
+            <View style={[styles.photoBubbleTip, isSelected && styles.photoBubbleTipSelected]} />
+          </View>
+        ) : (
+          <View
+            style={[
+              styles.pinInner,
+              { backgroundColor: cfg.bgColor },
+              // 一般地點選中時的外框用該分類自己的顏色（醫院紅、美容紫…），
+              // 不再一律用品牌棕，跟篩選膠囊與圖示同一組色
+              isSelected && [styles.pinInnerSelected, { borderColor: cfg.iconColor }],
+              // 合作夥伴選中時外框改金色，跟徽章同一套語彙，蓋過上面的分類色
+              isSelected && place.isPartner && styles.pinInnerSelectedPartner,
+            ]}
+          >
+            <MaterialIcons name={cfg.icon} size={isSelected ? 22 : 18} color={cfg.iconColor} />
+          </View>
+        )}
+        {place.isPartner && (
+          <View style={[styles.partnerStar, showPhoto && styles.partnerStarOnPhoto]}>
+            <MaterialIcons name="star" size={11} color={colors.onPartnerBadge} />
+          </View>
+        )}
+      </View>
+    </Marker>
+  );
+}
+
+function distanceMeters(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const R = 6371000;
   const dLat = (lat2 - lat1) * Math.PI / 180;
   const dLon = (lon2 - lon1) * Math.PI / 180;
@@ -140,7 +236,11 @@ function calcDistance(lat1: number, lon1: number, lat2: number, lon2: number): s
     Math.cos((lat1 * Math.PI) / 180) *
     Math.cos((lat2 * Math.PI) / 180) *
     Math.sin(dLon / 2) ** 2;
-  const m = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function calcDistance(lat1: number, lon1: number, lat2: number, lon2: number): string {
+  const m = distanceMeters(lat1, lon1, lat2, lon2);
   return m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(1)} km`;
 }
 
@@ -374,7 +474,16 @@ export default function MapScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const mapRef = useRef<any>(null);
   const cardAnim = useRef(new Animated.Value(0)).current;
-  const markerJustPressed = useRef(false);
+  /**
+   * 最後一次點到 marker 的時間戳。點 marker 時地圖本身的 onPress 也會跟著觸發，
+   * 要靠這個把它擋掉，否則剛跳出來的店家卡片會立刻被 handleMapPress 清掉。
+   *
+   * 原本是「布林旗標 + 300ms setTimeout」，但 marker 重繪（照片氣泡載入完成、
+   * 縮放跨過門檻）會讓 iOS 重建 annotation view，地圖的 onPress 因此延後送達，
+   * 超過 300ms 就擋不住了。改用時間戳比對，窗口也放寬到 800ms，
+   * 而且不會有「旗標卡在 true」的狀態殘留問題。
+   */
+  const lastMarkerPressAt = useRef(0);
   const mapReady = useRef(false);
   const didFlyToUser = useRef(false);
 
@@ -398,6 +507,8 @@ export default function MapScreen() {
   const [places, setPlaces] = useState<Place[]>([]);
   const [placesLoading, setPlacesLoading] = useState(false);
   const placesCacheRef = useRef<Map<string, { raw: ApiPlace[]; timestamp: number }>>(new Map());
+  // 是否放大到足以顯示合作店家的照片氣泡
+  const [zoomedIn, setZoomedIn] = useState(false);
   const [favoriteIds, setFavoriteIds] = useState<Set<string>>(new Set());
   const [favoritePlaces, setFavoritePlaces] = useState<Place[]>([]);
   const [showFavorites, setShowFavorites] = useState(false);
@@ -466,10 +577,29 @@ export default function MapScreen() {
     }
   }, [userLocation]);
 
-  // 地圖滑動停止時更新中心點與半徑
+  // 地圖滑動停止時更新中心點與半徑。
+  //
+  // 但不是每次都重查——第一次開地圖時 onRegionChangeComplete 會被 flyToUser 的
+  // 飛行動畫觸發，而它飛到的正是上一行 setMapCenter 剛設好的位置，等於白查一次。
+  // 加上掛載時的預設台北那次，冷啟動會連打三次 API、重繪三次 60 個 marker，
+  // 這就是「第一次開很卡、之後正常（快取命中）」的原因。
+  //
+  // 判斷標準用「相對於目前半徑」而不是固定距離：地圖縮得越大，同樣的位移
+  // 能看到的新店家越少，不值得重查。
   const handleRegionChangeComplete = (region: { latitude: number; longitude: number; latitudeDelta: number }) => {
     const radiusM = Math.min(Math.round((region.latitudeDelta / 2) * 111000), 30000);
-    setMapCenter({ latitude: region.latitude, longitude: region.longitude, radiusM });
+
+    // 照片氣泡的縮放門檻。獨立於下面 mapCenter 的節流判斷——那個要 30% 變化才更新，
+    // 用來省 API 呼叫；門檻只是布林值，跨過去就要立刻反映在畫面上
+    setZoomedIn(region.latitudeDelta <= PHOTO_MARKER_MAX_DELTA);
+
+    setMapCenter((prev) => {
+      const movedM = distanceMeters(prev.latitude, prev.longitude, region.latitude, region.longitude);
+      const zoomChanged = Math.abs(radiusM - prev.radiusM) / prev.radiusM > 0.3;
+      const movedEnough = movedM > prev.radiusM * 0.2;
+      if (!zoomChanged && !movedEnough) return prev; // 回傳同一個物件，effect 不會重跑
+      return { latitude: region.latitude, longitude: region.longitude, radiusM };
+    });
   };
 
   // 地圖中心或篩選變更時重新查詢（cleanup 避免過期請求覆蓋新結果）；
@@ -533,9 +663,8 @@ export default function MapScreen() {
   const filteredPlaces = places;
 
   const handlePinPress = (place: Place) => {
-    markerJustPressed.current = true;
+    lastMarkerPressAt.current = Date.now();
     setSelectedPlace(place);
-    setTimeout(() => { markerJustPressed.current = false; }, 300);
   };
 
   /**
@@ -555,7 +684,7 @@ export default function MapScreen() {
   };
 
   const handleMapPress = () => {
-    if (markerJustPressed.current) return;
+    if (Date.now() - lastMarkerPressAt.current < 800) return;
     setSelectedPlace(null);
   };
 
@@ -632,39 +761,18 @@ export default function MapScreen() {
           );
         }}
       >
-        {filteredPlaces.map((place) => {
-          const cfg = makeCategoryConfig(colors)[place.category];
-          const isSelected = selectedPlace?.id === place.id;
-          return (
-            <Marker
-              key={place.id}
-              coordinate={place.coordinate}
-              onPress={() => handlePinPress(place)}
-              onSelect={() => handlePinPress(place)}
-              tracksViewChanges={false}
-            >
-              <View pointerEvents="none" style={[styles.pin, isSelected && styles.pinSelected]}>
-                <View
-                  style={[
-                    styles.pinInner,
-                    { backgroundColor: cfg.bgColor },
-                    isSelected && styles.pinInnerSelected,
-                    // 合作夥伴選中時外框改金色，跟徽章同一套語彙；
-                    // 一般地點維持 primary，兩者一眼分得出來
-                    isSelected && place.isPartner && styles.pinInnerSelectedPartner,
-                  ]}
-                >
-                  <MaterialIcons name={cfg.icon} size={isSelected ? 22 : 18} color={cfg.iconColor} />
-                </View>
-                {place.isPartner && (
-                  <View style={styles.partnerStar}>
-                    <MaterialIcons name="star" size={11} color={colors.onPartnerBadge} />
-                  </View>
-                )}
-              </View>
-            </Marker>
-          );
-        })}
+        {filteredPlaces.map((place) => (
+          <PlaceMarker
+            key={place.id}
+            coordinate={place.coordinate}
+            place={place}
+            isSelected={selectedPlace?.id === place.id}
+            showPhoto={zoomedIn && !!place.isPartner && !!place.photoUrl}
+            onPress={() => handlePinPress(place)}
+            styles={styles}
+            colors={colors}
+          />
+        ))}
       </ClusteredMapView>
 
       {/* ── Filter Chips ─────────────────────────────────────────── */}
@@ -677,21 +785,30 @@ export default function MapScreen() {
           {FILTER_OPTIONS.map((opt) => {
             const isActive = activeFilter === opt.key;
             const cfg = opt.key !== 'all' ? makeCategoryConfig(colors)[opt.key as PlaceCategory] : null;
+            // 選取狀態用該分類自己的顏色，跟地圖上的圖釘同一組色，
+            // 一眼就知道現在篩的是哪一類。「全部」沒有分類色，用品牌主色。
+            const accent = cfg ? cfg.iconColor : colors.primary;
+            const accentBg = cfg ? cfg.bgColor : colors.primaryFixed;
             return (
               <TouchableOpacity
                 key={opt.key}
-                style={[styles.chip, isActive && styles.chipActive]}
+                style={[
+                  styles.chip,
+                  isActive && { backgroundColor: accentBg, borderColor: accent, borderWidth: 1.5 },
+                ]}
                 onPress={() => setActiveFilter(opt.key)}
                 activeOpacity={0.8}
+                accessibilityRole="button"
+                accessibilityState={{ selected: isActive }}
               >
                 {cfg && (
                   <MaterialIcons
                     name={cfg.icon}
                     size={15}
-                    color={isActive ? colors.onPrimary : colors.primary}
+                    color={isActive ? accent : colors.onSurfaceVariant}
                   />
                 )}
-                <Text style={[styles.chipLabel, isActive && styles.chipLabelActive]}>
+                <Text style={[styles.chipLabel, isActive && { color: accent, fontFamily: FontFamily.headlineBold }]}>
                   {opt.label}
                 </Text>
               </TouchableOpacity>
@@ -1419,17 +1536,10 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     shadowRadius: 4,
     elevation: 2,
   },
-  chipActive: {
-    backgroundColor: c.primary,
-    borderColor: c.primary,
-  },
   chipLabel: {
     fontFamily: FontFamily.headlineMedium,
     fontSize: FontSize.labelMD,
     color: c.onSurfaceVariant,
-  },
-  chipLabelActive: {
-    color: c.onPrimary,
   },
 
   // Map pins
@@ -1459,7 +1569,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     height: 52,
     borderRadius: 26,
     borderWidth: 3,
-    borderColor: c.primary,
+    // borderColor 由呼叫端依分類帶入（cfg.iconColor），這裡不寫死
   },
   pinInnerSelectedPartner: {
     // 白框對淺桃內圈只有 1.29、對地圖底 1.15，單靠顏色會消失。
@@ -1475,6 +1585,39 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   },
   // 星星本身有縫隙，直接放在地圖上會糊掉 —— 外面包一個 primary 圓底，
   // 再用底色描邊跟地圖分離，跟原本的圓點一樣醒目但語意更明確
+  // 合作店家的照片氣泡
+  photoBubble: {
+    width: 58,
+    height: 58,
+    borderRadius: 16,
+    overflow: 'hidden',
+    borderWidth: 3,
+    borderColor: c.partnerBadge,
+    backgroundColor: c.surfaceContainerHigh,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 7,
+  },
+  photoBubbleSelected: {
+    width: 72,
+    height: 72,
+    borderRadius: 20,
+  },
+  photoBubbleImg: { width: '100%', height: '100%' },
+  // 下方的小三角，讓氣泡看得出來是指著哪個座標點
+  photoBubbleTip: {
+    position: 'absolute',
+    bottom: -1,
+    alignSelf: 'center',
+    width: 10,
+    height: 10,
+    backgroundColor: c.partnerBadge,
+    transform: [{ rotate: '45deg' }],
+  },
+  photoBubbleTipSelected: { width: 12, height: 12 },
+  // 照片模式下氣泡比圓釘大，星星要往外移一點才不會壓在照片上
+  partnerStarOnPhoto: { top: -5, right: -5 },
   partnerStar: {
     position: 'absolute',
     top: -2,

@@ -4,6 +4,8 @@ import {
   Text,
   StyleSheet,
   FlatList,
+  Animated,
+  Easing,
   ScrollView,
   TouchableOpacity,
   TextInput,
@@ -39,6 +41,7 @@ import {
   formatTimeAgo,
 } from '../../api';
 import { Post, Pet, Species } from '../../types';
+import { SPECIES_LABEL, ALL_SPECIES } from '../../constants/species';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useRoute, RouteProp } from '@react-navigation/native';
 import { RootStackParamList, MainTabParamList } from '../../types/navigation';
@@ -64,10 +67,6 @@ type SortMode = 'new' | 'hot';
 type PostType = 'question' | 'meetup' | 'share';
 type FilterType = 'all' | PostType;
 
-const SPECIES_LABEL: Record<Species, string> = {
-  dog: '狗', cat: '貓', rabbit: '兔子', small: '小動物', bird: '鳥類', reptile: '爬蟲類', other: '其他',
-};
-const ALL_SPECIES: Species[] = ['dog', 'cat', 'rabbit', 'small', 'bird', 'reptile', 'other'];
 
 const makePostTypeConfig = (
   c: ThemeColors,
@@ -80,6 +79,8 @@ const makePostTypeConfig = (
 // 20*2 margin + 1*2 border；寬度在元件內用 useWindowDimensions 取得
 const CARD_IMAGE_INSET = 42;
 const MAX_IMAGES = 5;
+/** 貼文內文收合行數，超過才顯示「顯示更多」 */
+const COLLAPSED_LINES = 6;
 
 type ImagePayload = { uri: string; name: string; type: string };
 
@@ -128,13 +129,33 @@ function PostCard({
   const [liked, setLiked] = useState(post.isLiked ?? false);
   const [likeCount, setLikeCount] = useState(post.likes);
   const [imageIndex, setImageIndex] = useState(0);
+  const [expanded, setExpanded] = useState(false);
+  // 內容超過收合行數才顯示「顯示更多」；靠 onTextLayout 量到實際行數再決定
+  const [truncatable, setTruncatable] = useState(false);
   const allImages = post.images && post.images.length > 0 ? post.images : post.imageUrl ? [post.imageUrl] : [];
+
+  // 一次算好，原本每個 badge 都各自呼叫一次 makePostTypeConfig，捲動時每張卡都重跑
+  const typeCfg = post.postType && post.postType !== 'share'
+    ? makePostTypeConfig(colors)[post.postType]
+    : null;
+
+  const likeScale = useRef(new Animated.Value(1)).current;
 
   const toggleLikeLocal = () => {
     const next = !liked;
     setLiked(next);
     setLikeCount((c) => (next ? c + 1 : c - 1));
     onLike(post.id);
+
+    // 只在按下去（讚出去）時彈跳，取消讚不需要慶祝
+    if (next) {
+      likeScale.setValue(1);
+      Animated.sequence([
+        Animated.timing(likeScale, { toValue: 1.35, duration: 120, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+        Animated.timing(likeScale, { toValue: 0.88, duration: 80, useNativeDriver: true }),
+        Animated.spring(likeScale, { toValue: 1, friction: 4, tension: 180, useNativeDriver: true }),
+      ]).start();
+    }
   };
 
   const handleShare = async () => {
@@ -150,11 +171,11 @@ function PostCard({
         <View style={{ flex: 1 }}>
           <View style={styles.authorNameRow}>
             <Text style={styles.authorName}>{post.author}</Text>
-            {post.postType && post.postType !== 'share' && (
-              <View style={[styles.postTypeBadge, { backgroundColor: makePostTypeConfig(colors)[post.postType].color + '22' }]}>
-                <MaterialIcons name={makePostTypeConfig(colors)[post.postType].icon} size={11} color={makePostTypeConfig(colors)[post.postType].color} />
-                <Text style={[styles.postTypeBadgeLabel, { color: makePostTypeConfig(colors)[post.postType].color }]}>
-                  {makePostTypeConfig(colors)[post.postType].label}
+            {typeCfg && (
+              <View style={[styles.postTypeBadge, { backgroundColor: typeCfg.color + '22' }]}>
+                <MaterialIcons name={typeCfg.icon} size={11} color={typeCfg.color} />
+                <Text style={[styles.postTypeBadgeLabel, { color: typeCfg.color }]}>
+                  {typeCfg.label}
                 </Text>
               </View>
             )}
@@ -175,7 +196,29 @@ function PostCard({
         </TouchableOpacity>
       </View>
 
-      {post.content.length > 0 && <Text style={styles.content}>{post.content}</Text>}
+      {post.content.length > 0 && (
+        <>
+          <Text
+            style={styles.content}
+            numberOfLines={expanded ? undefined : COLLAPSED_LINES}
+            onTextLayout={(e) => {
+              // 只在收合狀態量；展開時行數必然超過，量了會誤判
+              if (!expanded && e.nativeEvent.lines.length >= COLLAPSED_LINES) setTruncatable(true);
+            }}
+          >
+            {post.content}
+          </Text>
+          {truncatable && (
+            <TouchableOpacity
+              onPress={() => setExpanded((v) => !v)}
+              activeOpacity={0.7}
+              style={styles.moreTextBtn}
+            >
+              <Text style={styles.moreTextLabel}>{expanded ? '收合' : '顯示更多'}</Text>
+            </TouchableOpacity>
+          )}
+        </>
+      )}
 
       {post.hashtags.length > 0 && (
         <View style={styles.hashtagRow}>
@@ -224,11 +267,13 @@ function PostCard({
       <View style={styles.actions}>
         <View style={styles.actionsLeft}>
           <TouchableOpacity style={styles.actionBtn} onPress={toggleLikeLocal} activeOpacity={0.7}>
-            <MaterialIcons
-              name={liked ? 'favorite' : 'favorite-border'}
-              size={22}
-              color={liked ? colors.primary : colors.onSurfaceVariant}
-            />
+            <Animated.View style={{ transform: [{ scale: likeScale }] }}>
+              <MaterialIcons
+                name={liked ? 'favorite' : 'favorite-border'}
+                size={22}
+                color={liked ? colors.primary : colors.onSurfaceVariant}
+              />
+            </Animated.View>
             <Text style={[styles.actionCount, liked && { color: colors.primary }]}>
               {likeCount}
             </Text>
@@ -997,70 +1042,49 @@ export default function CommunityScreen({ navigation }: Props) {
                   </TouchableOpacity>
                 </View>}
               </View>
-            ) : (
-              <View style={styles.composeTrigger}>
-                <TouchableOpacity
-                  style={styles.composeTriggerLeft}
-                  onPress={() => setComposing(true)}
-                  activeOpacity={0.7}
-                >
-                  <Avatar url={user.avatarUrl} name={user.name} seed={user.id} colorIndex={user.avatarColor} size={36} />
-                  <Text style={styles.composePlaceholder}>分享你和寵物的精彩時刻...</Text>
-                </TouchableOpacity>
-                <TouchableOpacity onPress={pickFromCamera} activeOpacity={0.7}>
-                  <MaterialIcons name="photo-camera" size={22} color={colors.primary} />
-                </TouchableOpacity>
-                <TouchableOpacity onPress={pickFromGallery} activeOpacity={0.7}>
-                  <MaterialIcons name="photo-library" size={22} color={colors.primary} />
-                </TouchableOpacity>
-              </View>
-            )}
+            ) : null /* 未發文時不佔位，改由右下角的 FAB 進入 */}
 
-            {/* 分類篩選 tabs */}
+            {/* 分類（主導覽）＋ 排序（次要，縮成右側小按鈕），兩者顯示條件一致 */}
             {!composing && (
-              <View style={styles.sortTabs}>
-                {(['all', 'question', 'meetup', 'share'] as FilterType[]).map((f) => {
-                  const active = filterType === f;
-                  const cfg = f === 'all' ? null : makePostTypeConfig(colors)[f];
-                  return (
-                    <TouchableOpacity
-                      key={f}
-                      style={[styles.sortTab, active && styles.sortTabActive]}
-                      onPress={() => setFilterType(f)}
-                      activeOpacity={0.7}
-                    >
-                      {cfg && (
-                        <MaterialIcons name={cfg.icon} size={14} color={active ? colors.onPrimary : colors.onSurfaceVariant} />
-                      )}
-                      <Text style={[styles.sortTabLabel, active && styles.sortTabLabelActive]}>
-                        {f === 'all' ? '全部' : cfg!.label}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            )}
+              <View style={styles.filterBar}>
+                <View style={styles.filterTabs}>
+                  {(['all', 'question', 'meetup', 'share'] as FilterType[]).map((f) => {
+                    const active = filterType === f;
+                    const cfg = f === 'all' ? null : makePostTypeConfig(colors)[f];
+                    return (
+                      <TouchableOpacity
+                        key={f}
+                        style={styles.filterTab}
+                        onPress={() => setFilterType(f)}
+                        activeOpacity={0.7}
+                        accessibilityRole="tab"
+                        accessibilityState={{ selected: active }}
+                      >
+                        <Text style={[styles.filterTabLabel, active && styles.filterTabLabelActive]}>
+                          {f === 'all' ? '全部' : cfg!.label}
+                        </Text>
+                        {/* 底線一律渲染、只切換顏色，避免選中時文字位移 */}
+                        <View style={[styles.filterUnderline, active && styles.filterUnderlineActive]} />
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
 
-            {/* Sort tabs — 無貼文時隱藏 */}
-            {(!refreshing && posts.length > 0) && (
-              <View style={styles.sortTabs}>
-                {(['new', 'hot'] as SortMode[]).map((s) => (
-                  <TouchableOpacity
-                    key={s}
-                    style={[styles.sortTab, sort === s && styles.sortTabActive]}
-                    onPress={() => setSort(s)}
-                    activeOpacity={0.7}
-                  >
-                    <MaterialIcons
-                      name={s === 'new' ? 'access-time' : 'local-fire-department'}
-                      size={14}
-                      color={sort === s ? colors.onPrimary : colors.onSurfaceVariant}
-                    />
-                    <Text style={[styles.sortTabLabel, sort === s && styles.sortTabLabelActive]}>
-                      {s === 'new' ? '最新' : '熱門'}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
+                <TouchableOpacity
+                  style={styles.sortBtn}
+                  onPress={() => setSort((s) => (s === 'new' ? 'hot' : 'new'))}
+                  activeOpacity={0.7}
+                  accessibilityRole="button"
+                  accessibilityLabel={`排序：${sort === 'new' ? '最新' : '熱門'}，點擊切換`}
+                >
+                  <MaterialIcons
+                    name={sort === 'new' ? 'access-time' : 'local-fire-department'}
+                    size={14}
+                    color={colors.primary}
+                  />
+                  <Text style={styles.sortBtnLabel}>{sort === 'new' ? '最新' : '熱門'}</Text>
+                  <MaterialIcons name="unfold-more" size={14} color={colors.outline} />
+                </TouchableOpacity>
               </View>
             )}
           </View>
@@ -1078,6 +1102,19 @@ export default function CommunityScreen({ navigation }: Props) {
         }
         ItemSeparatorComponent={() => <View style={styles.separator} />}
       />
+
+      {/* 發文入口。發文面板展開時收起來，避免蓋住表單 */}
+      {!composing && (
+        <TouchableOpacity
+          style={styles.composeFab}
+          onPress={() => setComposing(true)}
+          activeOpacity={0.85}
+          accessibilityRole="button"
+          accessibilityLabel="發布貼文"
+        >
+          <MaterialIcons name="edit" size={24} color={colors.onPrimary} />
+        </TouchableOpacity>
+      )}
 
       {/* ── Pet picker modal ── */}
       <Modal
@@ -1274,29 +1311,6 @@ export default function CommunityScreen({ navigation }: Props) {
 const makeStyles = (c: ThemeColors) => StyleSheet.create({
   header: { paddingHorizontal: 20, paddingBottom: 8 },
 
-  composeTrigger: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    backgroundColor: c.surfaceContainerLowest,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: c.surfaceVariant,
-    padding: 12,
-    marginBottom: 8,
-  },
-  composeTriggerLeft: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  composePlaceholder: {
-    flex: 1,
-    fontFamily: FontFamily.bodyMedium,
-    fontSize: FontSize.bodyMD,
-    color: c.outlineVariant,
-  },
 
   composeBox: {
     backgroundColor: c.surfaceContainerLowest,
@@ -1550,37 +1564,87 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   },
 
   // Sort tabs
-  sortTabs: {
+  filterBar: {
     flexDirection: 'row',
+    alignItems: 'flex-end',
     gap: 8,
     paddingTop: 4,
-    paddingBottom: 12,
+    paddingBottom: 10,
   },
-  sortTab: {
+  // 橫向可捲動：四顆膠囊在窄螢幕上放不下，不捲動就會擠到右邊的排序按鈕
+  // 底線式分頁：不用邊框底色，視覺重量比膠囊輕很多，四個分類加排序在窄螢幕也放得下
+  filterTabs: {
     flexDirection: 'row',
+    flex: 1,
+    gap: 4,
+  },
+  filterTab: {
     alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    borderRadius: 9999,
-    borderWidth: 1.5,
-    borderColor: c.surfaceVariant,
-    backgroundColor: c.surfaceContainerLow,
+    paddingHorizontal: 10,
+    paddingTop: 6,
+    gap: 6,
   },
-  sortTabActive: {
-    backgroundColor: c.primary,
-    borderColor: c.primary,
-  },
-  sortTabLabel: {
+  filterTabLabel: {
     fontFamily: FontFamily.headlineSemiBold,
     fontSize: FontSize.labelMD,
     color: c.onSurfaceVariant,
   },
-  sortTabLabelActive: {
-    color: c.onPrimary,
+  filterUnderline: {
+    height: 2.5,
+    width: '100%',
+    borderRadius: 2,
+    backgroundColor: 'transparent',
+  },
+  filterUnderlineActive: {
+    backgroundColor: c.primary,
+  },
+  sortBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingVertical: 7,
+    paddingLeft: 6,
+    flexShrink: 0,
+  },
+  sortBtnLabel: {
+    fontFamily: FontFamily.headlineSemiBold,
+    fontSize: FontSize.labelMD,
+    color: c.primary,
+  },
+  // 發文 FAB。沿用地圖頁的尺寸與陰影，全 App 的浮動按鈕維持一致
+  composeFab: {
+    position: 'absolute',
+    right: 20,
+    bottom: 24,
+    width: 56,
+    height: 56,
+    borderRadius: 18,
+    backgroundColor: c.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  moreTextBtn: {
+    paddingHorizontal: 16,
+    paddingBottom: 10,
+    marginTop: -4,
+  },
+  moreTextLabel: {
+    fontFamily: FontFamily.headlineSemiBold,
+    fontSize: FontSize.labelMD,
+    color: c.primary,
+  },
+  // 底線式分頁沒有底色，選中的字要用主色（不是膠囊時期的 onPrimary 白字）
+  filterTabLabelActive: {
+    color: c.primary,
+    fontFamily: FontFamily.headlineBold,
   },
 
-  separator: { height: 10 },
+  separator: { height: 14 },
 
   card: {
     backgroundColor: c.surfaceContainerLowest,
@@ -1588,6 +1652,12 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     marginHorizontal: 20,
     borderWidth: 1,
     borderColor: c.surfaceVariant,
+    // 原本只有 1px 邊框，卡片在同色系背景上幾乎沒有層次
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.07,
+    shadowRadius: 10,
+    elevation: 3,
   },
   carouselWrapper: {
     overflow: 'hidden',

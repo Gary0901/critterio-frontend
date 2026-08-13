@@ -24,27 +24,13 @@ import { FontFamily, FontSize } from '../../constants/typography';
 import { addPet } from '../../api';
 import { compressForUpload } from '../../utils/compressImage';
 import { Species, Gender } from '../../types';
+import { SPECIES_LIST } from '../../constants/species';
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'AddPet'>;
   route: RouteProp<RootStackParamList, 'AddPet'>;
 };
 
-type SpeciesItem = {
-  value: Species;
-  label: string;
-  icon: React.ComponentProps<typeof MaterialCommunityIcons>['name'];
-};
-
-const SPECIES_LIST: SpeciesItem[] = [
-  { value: 'dog',     label: '狗',     icon: 'dog' },
-  { value: 'cat',     label: '貓',     icon: 'cat' },
-  { value: 'rabbit',  label: '兔子',   icon: 'rabbit' },
-  { value: 'small',   label: '小動物', icon: 'rodent' },
-  { value: 'bird',    label: '鳥類',   icon: 'bird' },
-  { value: 'reptile', label: '爬蟲類', icon: 'turtle' },
-  { value: 'other',   label: '其他',   icon: 'paw' },
-];
 
 const BREEDS: Record<Species, string[]> = {
   dog:     ['黃金獵犬', '拉布拉多', '貴賓犬', '米格魯', '西施犬', '柯基', '哈士奇', '雪納瑞', '吉娃娃', '法鬥'],

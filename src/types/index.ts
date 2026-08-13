@@ -103,6 +103,12 @@ export interface Conversation {
   title: string;
   createdAt: string;
   messages: AiMessage[];
+  /**
+   * 這段對話綁定的寵物。後端在建立對話時寫入一次就不再變動，
+   * 它決定 AI 有沒有被掛上查詢真實紀錄的工具（見 aiController 的 toolsPetId）。
+   * undefined 代表未綁定，該對話的 AI 只有知識庫、查不到 App 內的資料。
+   */
+  petId?: string;
 }
 
 export interface ApiResponse<T> {
