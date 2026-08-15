@@ -16,6 +16,7 @@ import { Marker } from 'react-native-maps';
 import NearbyListScreen from './NearbyListScreen';
 import * as Location from 'expo-location';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { FLOATING_TAB_BAR_HEIGHT } from '../../constants/layout';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -463,7 +464,9 @@ const TAIPEI_REGION = {
   longitudeDelta: 0.02,
 };
 
-const TAB_BAR_HEIGHT = 60;
+// 從 navigation 匯入，分頁列改高度時這裡自動跟著走，不會再各留一份會漂移的數字。
+// 地圖是全出血的，浮動按鈕與預覽卡都要自己讓開懸浮分頁列
+const TAB_BAR_HEIGHT = FLOATING_TAB_BAR_HEIGHT;
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
@@ -615,6 +618,10 @@ export default function MapScreen() {
 
     if (cached && Date.now() - cached.timestamp < PLACES_CACHE_TTL_MS) {
       applyRaw(cached.raw);
+      // 快取命中也必須收掉轉圈。若上一輪查詢還在飛就被這輪取代，
+      // 它的 finally 會因為 cancelled 而不動 placesLoading，
+      // 這裡再不關就永遠停在「搜尋店家中」
+      setPlacesLoading(false);
       return;
     }
 

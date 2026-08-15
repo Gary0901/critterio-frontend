@@ -19,6 +19,8 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useFloatingTabBarPadding } from '../../constants/layout';
+import { useKeyboardVisible } from '../../hooks/useKeyboardVisible';
 import { MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { ThemeColors } from '../../constants/themes';
@@ -121,6 +123,10 @@ export default function AskAIScreen() {
   const { colors, theme } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const insets = useSafeAreaInsets();
+  const tabBarPad = useFloatingTabBarPadding();
+  // 鍵盤打開時分頁列已被鍵盤蓋住，再為它讓位就會在輸入列與鍵盤之間空出一大塊
+  const keyboardVisible = useKeyboardVisible();
+  const inputBarPad = keyboardVisible ? 12 : tabBarPad + 12;
 
   const [conversations, setConversations] = useState<Conversation[]>([
     { id: NEW_CONV_ID, title: '新對話', createdAt: '剛剛', messages: [] },
@@ -470,7 +476,10 @@ export default function AskAIScreen() {
       <KeyboardAvoidingView
         style={styles.kav}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top : 0}
+        // 0 而不是 insets.top：keyboardVerticalOffset 補的是「KAV 頂端距離螢幕頂端」的差距。
+        // 分頁列改成懸浮之後這個畫面從 y=0 一路延伸到螢幕底部，差距就是 0，
+        // 再給 insets.top 會在輸入列與鍵盤之間多墊出一段空白
+        keyboardVerticalOffset={0}
       >
         {/* Header */}
         <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
@@ -639,7 +648,7 @@ export default function AskAIScreen() {
         )}
 
         {/* Input bar */}
-        <View style={[styles.inputBar, { paddingBottom: insets.bottom + 12 }]}>
+        <View style={[styles.inputBar, { paddingBottom: inputBarPad }]}>
           <TouchableOpacity style={styles.iconBtn} onPress={() => pickImage('camera')}>
             <MaterialIcons name="photo-camera" size={22} color={colors.onSurface} />
           </TouchableOpacity>
@@ -771,6 +780,8 @@ export default function AskAIScreen() {
         <FlatList
           data={conversations}
           keyExtractor={(c) => c.id}
+          // 側邊欄是滿版高度，最後幾筆對話會落在懸浮分頁列底下
+          contentContainerStyle={{ paddingBottom: tabBarPad + 12 }}
           renderItem={({ item }) => (
             <TouchableOpacity
               style={[styles.convItem, item.id === activeConvId && styles.convItemActive]}

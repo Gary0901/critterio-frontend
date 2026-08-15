@@ -15,6 +15,7 @@ import {
   ActivityIndicator,
   Alert,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
@@ -39,6 +40,10 @@ const LOCAL_PET_PHOTOS: Record<string, any> = {
   p2: require('../../../photo/mypets/mypets2.jpg'),
   p3: require('../../../photo/mypets/mypets3.jpg'),
 };
+
+// Hero 展開／收合後的高度。收合後只留一條標題列，內容區因此多出約 250pt
+const HERO_MAX_H = 320;
+const HERO_BAR_H = 56;
 
 const CHART_H_INSET = 72;        // card inner width = 視窗寬 - 這個值
 const POINT_SPACING = 64;        // px between each weekly point
@@ -104,6 +109,26 @@ export default function PetDetailScreen({ navigation, route }: Props) {
   const styles = useThemedStyles(makeStyles);
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
+
+  // Hero 收合：位移量 = 展開高度 - (安全區 + 標題列)
+  const scrollY = useRef(new Animated.Value(0)).current;
+  const heroCollapse = HERO_MAX_H - (insets.top + HERO_BAR_H);
+  const heroTranslate = scrollY.interpolate({
+    inputRange: [0, heroCollapse],
+    outputRange: [0, -heroCollapse],
+    extrapolate: 'clamp',
+  });
+  // 大字資訊比 hero 早收完，收到一半就看不到了，才不會跟精簡標題疊在一起
+  const heroInfoOpacity = scrollY.interpolate({
+    inputRange: [0, heroCollapse * 0.55],
+    outputRange: [1, 0],
+    extrapolate: 'clamp',
+  });
+  const compactTitleOpacity = scrollY.interpolate({
+    inputRange: [heroCollapse * 0.6, heroCollapse],
+    outputRange: [0, 1],
+    extrapolate: 'clamp',
+  });
   const { petId } = route.params;
   const today = new Date().toISOString().split('T')[0];
   const [pet, setPet] = useState<Pet | null>(null);
@@ -327,12 +352,19 @@ export default function PetDetailScreen({ navigation, route }: Props) {
           style: 'destructive',
           onPress: async () => {
             setDeletingPet(true);
-            const res = await apiDeletePet(petId);
-            setDeletingPet(false);
-            if (res.success) {
-              navigation.goBack();
-            } else {
-              Alert.alert('刪除失敗', '請稍後再試');
+            try {
+              const res = await apiDeletePet(petId);
+              if (res.success) {
+                navigation.goBack();
+              } else {
+                Alert.alert('刪除失敗', res.message || '請稍後再試');
+              }
+            } catch {
+            // api 層用 axios，網路錯誤與非 2xx 都會直接拋出來（包裝函式沒有攔）。
+            // 不接的話旗標永遠停在 true，按鈕會卡在停用狀態、使用者只能重開 App
+              Alert.alert('刪除失敗', '網路錯誤，請稍後再試');
+            } finally {
+              setDeletingPet(false);
             }
           },
         },
@@ -398,26 +430,32 @@ export default function PetDetailScreen({ navigation, route }: Props) {
       return;
     }
     setSaving(true);
-    const tasks: Promise<any>[] = [];
-    if (hasWeight) tasks.push(addWeightLog(petId, kg));
-    if (hasHeight) tasks.push(updatePetData(petId, { heightCm: cm }));
-    const results = await Promise.all(tasks);
-    setSaving(false);
-    let taskIdx = 0;
-    if (hasWeight) {
-      const res = results[taskIdx++];
-      if (res.success) {
-        setPet((prev) => prev ? { ...prev, weightKg: kg } : prev);
-        setWeightLogs((prev) => [res.data, ...prev]);
+    try {
+      const tasks: Promise<any>[] = [];
+      if (hasWeight) tasks.push(addWeightLog(petId, kg));
+      if (hasHeight) tasks.push(updatePetData(petId, { heightCm: cm }));
+      // Promise.all 任一個拋錯就整批 reject，原本沒接的話儲存鈕會永久停用
+      const results = await Promise.all(tasks);
+      let taskIdx = 0;
+      if (hasWeight) {
+        const res = results[taskIdx++];
+        if (res.success) {
+          setPet((prev) => prev ? { ...prev, weightKg: kg } : prev);
+          setWeightLogs((prev) => [res.data, ...prev]);
+        }
       }
-    }
-    if (hasHeight) {
-      const res = results[taskIdx++];
-      if (res.success) {
-        setPet((prev) => prev ? { ...prev, heightCm: cm } : prev);
+      if (hasHeight) {
+        const res = results[taskIdx++];
+        if (res.success) {
+          setPet((prev) => prev ? { ...prev, heightCm: cm } : prev);
+        }
       }
+      closeSheet();
+    } catch {
+      Alert.alert('儲存失敗', '網路錯誤，請稍後再試');
+    } finally {
+      setSaving(false);
     }
-    closeSheet();
   };
 
   const CATEGORY_ICON: Record<string, keyof typeof MaterialIcons.glyphMap> = {
@@ -558,84 +596,112 @@ export default function PetDetailScreen({ navigation, route }: Props) {
 
   if (!pet) return null;
 
+  // 沿用原本頭像的來源判斷：本地示範圖優先，其次後端上傳的照片
+  const heroPhoto = LOCAL_PET_PHOTOS[pet.id] ?? (pet.photoUrl ? { uri: pet.photoUrl } : null);
+
+  // 容器刻意不吃 insets.top：hero 要滿版貼齊螢幕頂端（延伸到狀態列底下）。
+  // 安全區由 hero 內部的按鈕與精簡標題各自處理；容器再加一次 paddingTop 會把
+  // ScrollView 整個往下推，但絕對定位的 hero 不受影響，兩者之間就會多出一段空白。
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.iconBtn}>
-          <MaterialIcons name="arrow-back" size={24} color={colors.onSurface} />
+    <View style={styles.container}>
+      {/* ── 可收合的 Hero ──
+        捲動時整塊往上位移，只留下方 HERO_MIN_H 那條當標題列；
+        大字資訊淡出、精簡標題淡入。全部只用 translateY / opacity，
+        才能走 useNativeDriver（高度動畫不支援原生驅動，會掉幀）。 */}
+      <Animated.View style={[styles.hero, { height: HERO_MAX_H, transform: [{ translateY: heroTranslate }] }]}>
+        <TouchableOpacity
+          activeOpacity={photoUploading ? 1 : 0.9}
+          onPress={pickPetPhoto}
+          disabled={photoUploading}
+          style={StyleSheet.absoluteFill}
+        >
+          {heroPhoto ? (
+            <Image source={heroPhoto} style={StyleSheet.absoluteFill} resizeMode="cover" />
+          ) : (
+            <View style={[StyleSheet.absoluteFill, styles.heroEmpty]}>
+              <Text style={styles.heroEmoji}>{speciesEmoji(pet.species)}</Text>
+              <Text style={styles.heroEmptyHint}>點一下新增 {pet.name} 的照片</Text>
+            </View>
+          )}
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>{pet.name}</Text>
-        <View style={styles.iconBtn} />
+
+        {/* 底部暗色漸層：白字要壓在照片上，沒有它遇到亮色照片就看不見 */}
+        <LinearGradient
+          colors={['transparent', 'rgba(0,0,0,0.25)', 'rgba(0,0,0,0.72)']}
+          locations={[0, 0.45, 1]}
+          style={styles.heroScrim}
+          pointerEvents="none"
+        />
+
+        {photoUploading && (
+          <View style={styles.heroUploading} pointerEvents="none">
+            <ActivityIndicator color="#fff" />
+          </View>
+        )}
+
+        {/* 換照片的明確入口。整塊 hero 本來就可以點，但沒有提示等於沒人知道 */}
+        <Animated.View style={[styles.heroCamera, { opacity: heroInfoOpacity }]}>
+          <TouchableOpacity
+            onPress={pickPetPhoto}
+            disabled={photoUploading}
+            style={styles.heroCameraBtn}
+            accessibilityRole="button"
+            accessibilityLabel={heroPhoto ? '更換照片' : '新增照片'}
+          >
+            <MaterialIcons name="photo-camera" size={18} color={colors.onSurface} />
+          </TouchableOpacity>
+        </Animated.View>
+
+        <Animated.View style={[styles.heroInfo, { opacity: heroInfoOpacity }]} pointerEvents="none">
+          <View style={styles.heroNameRow}>
+            <Text style={styles.heroName}>{pet.name}</Text>
+            <Badge status={pet.status} label={pet.statusLabel} />
+          </View>
+          <Text style={styles.heroSub}>{pet.age} 歲 · {pet.breed}</Text>
+          {(pet.birthday || pet.joinedAt) && (
+            <View style={styles.heroMetaRow}>
+              {pet.birthday && (
+                <Text style={styles.heroMeta}>🎂 {pet.birthday.slice(0, 10).replace(/-/g, '/')}</Text>
+              )}
+              {pet.joinedAt && (
+                <Text style={styles.heroMeta}>🏠 {pet.joinedAt.slice(0, 10).replace(/-/g, '/')}</Text>
+              )}
+            </View>
+          )}
+        </Animated.View>
+      </Animated.View>
+
+      {/* 收合後的精簡標題，淡入取代大字 */}
+      <Animated.View
+        style={[styles.compactTitle, { top: insets.top, opacity: compactTitleOpacity }]}
+        pointerEvents="none"
+      >
+        <Text style={styles.compactTitleText} numberOfLines={1}>{pet.name}</Text>
+      </Animated.View>
+
+      {/* 返回／編輯不隨 hero 位移，捲到底也還在 */}
+      <View style={[styles.heroBtnRow, { top: insets.top + 4 }]}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.heroBtn}>
+          <MaterialIcons name="arrow-back" size={22} color={colors.onSurface} />
+        </TouchableOpacity>
+        <TouchableOpacity onPress={openEditSheet} style={styles.heroBtn}>
+          <MaterialIcons name="edit" size={20} color={colors.onSurface} />
+        </TouchableOpacity>
       </View>
 
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        {/* ── Pet info card ── */}
-        <Card style={styles.infoCard}>
-          <TouchableOpacity style={styles.editInfoBtn} onPress={openEditSheet} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <MaterialIcons name="edit" size={16} color={colors.onSurfaceVariant} />
-          </TouchableOpacity>
-          <View style={styles.infoRow}>
-            <TouchableOpacity
-              style={styles.avatarWrap}
-              onPress={pickPetPhoto}
-              activeOpacity={LOCAL_PET_PHOTOS[pet.id] ? 1 : 0.75}
-              disabled={photoUploading}
-            >
-              {LOCAL_PET_PHOTOS[pet.id] ? (
-                <Image source={LOCAL_PET_PHOTOS[pet.id]} style={styles.avatar} />
-              ) : pet.photoUrl ? (
-                <Image source={{ uri: pet.photoUrl }} style={styles.avatar} />
-              ) : (
-                <View style={[styles.avatar, styles.avatarEmpty]}>
-                  <Text style={styles.avatarEmoji}>{speciesEmoji(pet.species)}</Text>
-                </View>
-              )}
-              {photoUploading && (
-                <View style={[styles.avatar, styles.avatarUploadingOverlay]}>
-                  <ActivityIndicator color="#fff" />
-                </View>
-              )}
-              {!LOCAL_PET_PHOTOS[pet.id] && !photoUploading && (
-                <View style={styles.avatarEditBadge}>
-                  <MaterialIcons name="photo-camera" size={12} color={colors.onPrimary} />
-                </View>
-              )}
-              <View style={styles.pawBadge}>
-                <MaterialIcons name="pets" size={11} color={colors.primary} />
-              </View>
-            </TouchableOpacity>
-            <View style={styles.infoRight}>
-              <Text style={styles.petName}>{pet.name}</Text>
-              <Text style={styles.petSub}>{pet.age} 歲 • {pet.breed}</Text>
-              {(pet.birthday || pet.joinedAt) && (
-                <View style={styles.petMetaRow}>
-                  {pet.birthday && (
-                    <Text style={styles.petMeta}>
-                      🎂 {pet.birthday.slice(0, 10).replace(/-/g, '/')}
-                    </Text>
-                  )}
-                  {pet.joinedAt && (
-                    <Text style={styles.petMeta}>
-                      🏠 {pet.joinedAt.slice(0, 10).replace(/-/g, '/')}
-                    </Text>
-                  )}
-                </View>
-              )}
-              <View style={{ marginTop: 4 }}>
-                <Badge status={pet.status} label={pet.statusLabel} />
-              </View>
-              <View style={styles.chips}>
-                {pet.traits.map((t) => <Chip key={t} label={t} />)}
-              </View>
-            </View>
-          </View>
-        </Card>
-
+      <Animated.ScrollView
+        contentContainerStyle={[styles.content, { paddingTop: HERO_MAX_H + 16 }]}
+        showsVerticalScrollIndicator={false}
+        scrollEventThrottle={16}
+        onScroll={Animated.event(
+          [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+          { useNativeDriver: true },
+        )}
+      >
         {/* ── Today's Log card ── */}
         <TouchableOpacity
           activeOpacity={0.88}
-          onPress={() => navigation.navigate('DailyLog', { petId: pet.id, petName: pet.name })}
+          onPress={() => navigation.navigate('DailyLog', { petId: pet.id, petName: pet.name, petColor: pet.color })}
         >
           {todayEntry ? (
             <Card style={styles.logCardDone}>
@@ -887,7 +953,7 @@ export default function PetDetailScreen({ navigation, route }: Props) {
           <MaterialIcons name="add-circle-outline" size={20} color={colors.onPrimary} />
           <Text style={styles.logBtnLabel}>新增記錄</Text>
         </TouchableOpacity>
-      </ScrollView>
+      </Animated.ScrollView>
 
       {/* ── Add Care Item Modal ── */}
       <Modal visible={showAddModal} transparent animationType="slide" onRequestClose={() => setShowAddModal(false)}>
@@ -947,7 +1013,19 @@ export default function PetDetailScreen({ navigation, route }: Props) {
           <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={closeEditSheet} />
           <Animated.View style={[styles.sheet, { paddingBottom: insets.bottom + 24, transform: [{ translateY: editSlideAnim }] }]}>
             <View style={styles.sheetHandle} />
-            <Text style={styles.sheetTitle}>編輯基本資料</Text>
+            {/* 原本只能點背景關閉，表單一長背景幾乎看不到，等於沒有退路 */}
+            <View style={styles.sheetTitleRow}>
+              <Text style={styles.sheetTitle}>編輯基本資料</Text>
+              <TouchableOpacity
+                onPress={closeEditSheet}
+                style={styles.sheetCloseBtn}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                accessibilityRole="button"
+                accessibilityLabel="取消編輯"
+              >
+                <MaterialIcons name="close" size={20} color={colors.onSurfaceVariant} />
+              </TouchableOpacity>
+            </View>
 
             {/* Name */}
             <View style={styles.inputGroup}>
@@ -1217,107 +1295,106 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   colorDotTaken: { opacity: 0.28 },
   colorDotBlock: { position: 'absolute' },
   container: { flex: 1, backgroundColor: c.background },
-
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 8,
-  },
-  iconBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
-  headerTitle: {
-    flex: 1,
-    textAlign: 'center',
-    fontFamily: FontFamily.headlineSemiBold,
-    fontSize: FontSize.bodyLG,
-    color: c.onSurface,
-  },
-
   content: { paddingHorizontal: 20, paddingBottom: 40, gap: 16 },
 
-  // Pet info
-  infoCard: {},
-  infoRow: { flexDirection: 'row', gap: 16, alignItems: 'flex-start' },
-  avatarWrap: { position: 'relative' },
-  avatar: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    borderWidth: 3,
-    borderColor: c.primaryContainer,
-  },
-  avatarEmpty: {
+  // ── 可收合 Hero ──
+  hero: {
+    position: 'absolute',
+    top: 0, left: 0, right: 0,
     backgroundColor: c.surfaceContainerHigh,
-    alignItems: 'center',
-    justifyContent: 'center',
+    overflow: 'hidden',
+    zIndex: 2,
   },
-  avatarEmoji: { fontSize: 36 },
-  avatarUploadingOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  avatarEditBadge: {
-    position: 'absolute',
-    top: -2,
-    right: -2,
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: c.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: c.surfaceContainerLowest,
-  },
-  pawBadge: {
-    position: 'absolute',
-    bottom: -2,
-    right: -2,
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: c.primaryFixed,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: c.surfaceContainerLowest,
-  },
-  infoRight: { flex: 1, gap: 2 },
-  petName: {
-    fontFamily: FontFamily.headlineBold,
-    fontSize: FontSize.headlineMD,
-    color: c.onSurface,
-  },
-  petSub: {
-    fontFamily: FontFamily.bodyMedium,
-    fontSize: FontSize.bodyMD,
-    color: c.onSurfaceVariant,
-  },
-  petMetaRow: {
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: 2,
-  },
-  petMeta: {
+  heroEmpty: { alignItems: 'center', justifyContent: 'center', gap: 8 },
+  heroEmoji: { fontSize: 64 },
+  heroEmptyHint: {
     fontFamily: FontFamily.bodyMedium,
     fontSize: FontSize.labelMD,
     color: c.onSurfaceVariant,
   },
-  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 6 },
+  heroScrim: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 200 },
+  heroUploading: {
+    position: 'absolute',
+    top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  // right 讓開右下角的相機鍵（44 + 12 間距），長名字才不會被壓在按鈕下面
+  heroInfo: { position: 'absolute', left: 20, right: 76, bottom: 18, gap: 4 },
+  heroCamera: { position: 'absolute', right: 20, bottom: 18 },
+  heroCameraBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    width: 44, height: 44, borderRadius: 22,
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.92)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 5,
+    elevation: 3,
+  },
+  heroNameRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  heroName: {
+    fontFamily: FontFamily.headlineBold,
+    fontSize: FontSize.headlineLG,
+    color: '#fff',
+  },
+  heroSub: {
+    fontFamily: FontFamily.bodyMedium,
+    fontSize: FontSize.bodyMD,
+    color: 'rgba(255,255,255,0.92)',
+  },
+  heroMetaRow: { flexDirection: 'row', gap: 14, marginTop: 2 },
+  heroMeta: {
+    fontFamily: FontFamily.bodyMedium,
+    fontSize: FontSize.labelMD,
+    color: 'rgba(255,255,255,0.85)',
+  },
+  // 收合後的精簡標題，跟返回鍵同一條水平線
+  compactTitle: {
+    position: 'absolute',
+    left: 64, right: 64,
+    height: 44,
+    marginTop: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 3,
+  },
+  compactTitleText: {
+    fontFamily: FontFamily.headlineSemiBold,
+    fontSize: FontSize.bodyLG,
+    color: '#fff',
+  },
+  heroBtnRow: {
+    position: 'absolute',
+    left: 12, right: 12,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    zIndex: 4,
+  },
+  heroBtn: {
+    width: 40, height: 40, borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.92)',
+    alignItems: 'center', justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.18,
+    shadowRadius: 5,
+    elevation: 3,
+  },
 
-  // Card shared
+  // 卡片內距與圓角由 Card 元件本身提供，這裡只補間距
   card: { gap: 12 },
   cardHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
   cardLabel: {
     fontFamily: FontFamily.headlineMedium,
-    fontSize: FontSize.bodyMD,
+    fontSize: FontSize.labelMD,
     color: c.onSurfaceVariant,
-    marginBottom: 2,
   },
+  sheetTitleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  sheetCloseBtn: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center' },
   cardTitle: {
     fontFamily: FontFamily.headlineSemiBold,
     fontSize: FontSize.bodyMD,
@@ -1676,13 +1753,6 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   catChipLabelActive: { color: c.onPrimary },
 
   // Edit info button
-  editInfoBtn: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-    padding: 6,
-    zIndex: 1,
-  },
 
   // Date inputs in edit sheet
   dateRow: {

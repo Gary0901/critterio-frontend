@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Animated,
   View,
   Text,
   StyleSheet,
@@ -10,9 +11,13 @@ import {
   Alert,
   ActionSheetIOS,
   Platform,
+  KeyboardAvoidingView,
   ActivityIndicator,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useSwipePager } from '../../hooks/useSwipePager';
+import { petColorAt } from '../../constants/petColors';
+import ShareCardSheet from '../../components/share/ShareCardSheet';
 import { MaterialIcons } from '@expo/vector-icons';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RouteProp } from '@react-navigation/native';
@@ -88,7 +93,7 @@ type Props = {
 
 // ─── Component ───────────────────────────────────────────────────────────────
 export default function DailyLogScreen({ navigation, route }: Props) {
-  const { colors } = useTheme();
+  const { colors, theme } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const insets = useSafeAreaInsets();
   const { petId, petName } = route.params;
@@ -101,6 +106,9 @@ export default function DailyLogScreen({ navigation, route }: Props) {
   const [selectedMoods, setSelectedMoods] = useState<string[]>([]);
 
   const [photoUri, setPhotoUri] = useState<string | null>(null);
+  const [shareCardOpen, setShareCardOpen] = useState(false);
+  // 分享卡的色帶用這隻寵物的識別色，跟行事曆、我的寵物同一套
+  const petColor = petColorAt(route.params.petColor, theme.key);
   const [saving, setSaving] = useState(false);
   const [justSaved, setJustSaved] = useState(false);
   const [justSavedPhoto, setJustSavedPhoto] = useState<string | null>(null);
@@ -114,8 +122,9 @@ export default function DailyLogScreen({ navigation, route }: Props) {
   const todayWeekStart = getWeekStart(today);
   const canNextWeek = weekStart < todayWeekStart;
   const canNextMonth = calYear < new Date().getFullYear() || calMonth < new Date().getMonth();
-  const weekDates = getWeekDates(weekStart);
-  const monthCells = getMonthCells(calYear, calMonth);
+  // 記憶化：不然每次 render 都重建整組日期格，拖曳期間會反覆做無謂的計算
+  const weekDates = useMemo(() => getWeekDates(weekStart), [weekStart]);
+  const monthCells = useMemo(() => getMonthCells(calYear, calMonth), [calYear, calMonth]);
   const DOW_LABELS = ['日', '一', '二', '三', '四', '五', '六'];
 
   const prevWeek = () => { const d = new Date(weekStart); d.setDate(d.getDate() - 7); setWeekStart(toDateStr(d)); };
@@ -132,6 +141,15 @@ export default function DailyLogScreen({ navigation, route }: Props) {
       setViewMode('week');
     }
   };
+
+  // 左右滑切換週／月。canNext 接上原本「不能滑到未來」的限制——
+  // 到當週/當月時往左滑會有阻尼，跟右邊那顆被停用的箭頭是同一個規則
+  const calendarSwipe = useSwipePager({
+    onPrev: () => (viewMode === 'week' ? prevWeek() : prevMonth()),
+    onNext: () => (viewMode === 'week' ? nextWeek() : nextMonth()),
+    canNext: viewMode === 'week' ? canNextWeek : canNextMonth,
+    fade: false, // 月檢視格子多，動畫 opacity 的合成成本比位移本身還高
+  });
 
   const selectedEntry = entries.find((e) => e.date === selectedDate);
   const entryDates = new Set(entries.map((e) => e.date));
@@ -203,25 +221,31 @@ export default function DailyLogScreen({ navigation, route }: Props) {
       return;
     }
     setSaving(true);
-    const photo = photoUri
-      ? await compressForUpload({ uri: photoUri, name: `log_${Date.now()}.jpg`, type: 'image/jpeg' })
-      : undefined;
-    const res = await addDiaryEntry(petId, {
-      content: note.trim() || '今日日誌',
-      date: today,
-      mood: selectedMoods,
-      photo,
-    });
-    setSaving(false);
-    if (res.success) {
-      setEntries((prev) => [res.data, ...prev]);
-      setNote('');
-      setSelectedMoods([]);
-      setJustSaved(true);
-      setJustSavedPhoto(photoUri);
-      setPhotoUri(null);
-    } else {
-      Alert.alert('儲存失敗', res.message || '請稍後再試');
+    try {
+      // 圖片壓縮與上傳都可能拋錯，沒接的話儲存鈕會永久停用
+      const photo = photoUri
+        ? await compressForUpload({ uri: photoUri, name: `log_${Date.now()}.jpg`, type: 'image/jpeg' })
+        : undefined;
+      const res = await addDiaryEntry(petId, {
+        content: note.trim() || '今日日誌',
+        date: today,
+        mood: selectedMoods,
+        photo,
+      });
+      if (res.success) {
+        setEntries((prev) => [res.data, ...prev]);
+        setNote('');
+        setSelectedMoods([]);
+        setJustSaved(true);
+        setJustSavedPhoto(photoUri);
+        setPhotoUri(null);
+      } else {
+        Alert.alert('儲存失敗', res.message || '請稍後再試');
+      }
+    } catch {
+      Alert.alert('儲存失敗', '網路錯誤，請稍後再試');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -280,6 +304,8 @@ export default function DailyLogScreen({ navigation, route }: Props) {
           </TouchableOpacity>
         </View>
 
+        <View style={calendarSwipe.clipStyle} {...calendarSwipe.panHandlers}>
+        <Animated.View style={calendarSwipe.animatedStyle} {...calendarSwipe.rasterProps}>
         {viewMode === 'week' ? (
           /* ── Week strip ── */
           <View style={styles.weekRow}>
@@ -331,9 +357,28 @@ export default function DailyLogScreen({ navigation, route }: Props) {
             </View>
           </>
         )}
+        </Animated.View>
+        </View>
       </View>
 
+      {selectedEntry && diaryPhoto?.url && (
+        <ShareCardSheet
+          visible={shareCardOpen}
+          onClose={() => setShareCardOpen(false)}
+          petName={petName}
+          petColor={petColor}
+          photoUri={diaryPhoto.url}
+          date={selectedEntry.date}
+          moods={selectedEntry.mood}
+          note={selectedEntry.note}
+        />
+      )}
+
       {/* Scrollable content */}
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
       <ScrollView
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
@@ -383,19 +428,33 @@ export default function DailyLogScreen({ navigation, route }: Props) {
               )}
             </View>
 
-            <TouchableOpacity
-              style={styles.shareEntryBtn}
-              activeOpacity={0.8}
-              onPress={() => {
-                const photo = selectedEntry.photoUrl
-                  ? { uri: selectedEntry.photoUrl, name: `diary_${Date.now()}.jpg`, type: 'image/jpeg' }
-                  : undefined;
-                navigation.navigate('MainTabs', { screen: 'Community', params: { sharePhoto: photo, sharePetName: petName } } as any);
-              }}
-            >
-              <MaterialIcons name="people" size={18} color={colors.primary} />
-              <Text style={styles.shareEntryBtnLabel}>分享到社群</Text>
-            </TouchableOpacity>
+            <View style={styles.shareRow}>
+              <TouchableOpacity
+                style={styles.shareEntryBtn}
+                activeOpacity={0.8}
+                onPress={() => {
+                  const photo = selectedEntry.photoUrl
+                    ? { uri: selectedEntry.photoUrl, name: `diary_${Date.now()}.jpg`, type: 'image/jpeg' }
+                    : undefined;
+                  navigation.navigate('MainTabs', { screen: 'Community', params: { sharePhoto: photo, sharePetName: petName } } as any);
+                }}
+              >
+                <MaterialIcons name="people" size={18} color={colors.primary} />
+                <Text style={styles.shareEntryBtnLabel}>分享到社群</Text>
+              </TouchableOpacity>
+
+              {/* 分享卡的價值就是照片，沒照片的日誌不提供——那種版本會很空 */}
+              {!!diaryPhoto?.url && (
+                <TouchableOpacity
+                  style={[styles.shareEntryBtn, styles.shareCardBtn]}
+                  activeOpacity={0.8}
+                  onPress={() => setShareCardOpen(true)}
+                >
+                  <MaterialIcons name="auto-awesome" size={18} color={colors.onPrimary} />
+                  <Text style={[styles.shareEntryBtnLabel, { color: colors.onPrimary }]}>做成分享卡</Text>
+                </TouchableOpacity>
+              )}
+            </View>
           </>
         ) : isToday ? (
           /* ── Add entry view (today, no entry) ── */
@@ -481,6 +540,7 @@ export default function DailyLogScreen({ navigation, route }: Props) {
           </View>
         )}
       </ScrollView>
+      </KeyboardAvoidingView>
     </View>
   );
 }
@@ -780,11 +840,16 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   },
 
   // Share on existing entry
+  shareRow: { flexDirection: 'row', gap: 10, alignItems: 'stretch' },
+  shareCardBtn: { backgroundColor: c.primary, borderColor: c.primary },
   shareEntryBtn: {
+    // flex:1 讓兩顆平分寬度。原本靠內容撐開，兩顆加起來就超出容器
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
+    gap: 6,
+    paddingHorizontal: 8,
     borderWidth: 1.5,
     borderColor: c.primary,
     borderRadius: 9999,

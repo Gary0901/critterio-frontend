@@ -1,5 +1,6 @@
 import { useEffect, useState, useMemo, useCallback } from 'react';
 import {
+  Animated,
   View,
   Text,
   StyleSheet,
@@ -8,6 +9,8 @@ import {
   Modal,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useFloatingTabBarPadding } from '../../constants/layout';
+import { useSwipePager } from '../../hooks/useSwipePager';
 import { MaterialIcons } from '@expo/vector-icons';
 import AppBar from '../../components/layout/AppBar';
 import { useUser } from '../../context/UserContext';
@@ -175,6 +178,7 @@ export default function CalendarScreen({ navigation }: Props) {
   const { colors, theme } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const insets = useSafeAreaInsets();
+  const tabBarPad = useFloatingTabBarPadding();
   const { user } = useUser();
   const { unreadCount } = useNotifications();
   const [events, setEvents] = useState<CalendarEvent[]>([]);
@@ -250,7 +254,8 @@ export default function CalendarScreen({ navigation }: Props) {
   const doneCount = selectedDateEvents.filter((e) => e.done).length;
   const overdueCount = selectedDateEvents.filter((e) => !e.done && e.date < todayStr).length;
 
-  const calDays = buildCalendarDays(year, month);
+  // 月格只跟年月有關；不記憶化的話每次 render 都重建 42 格，拖曳期間成本很可觀
+  const calDays = useMemo(() => buildCalendarDays(year, month), [year, month]);
 
   const prevPeriod = () => {
     if (viewMode === 'month') {
@@ -274,6 +279,10 @@ export default function CalendarScreen({ navigation }: Props) {
       setYear(d.getFullYear()); setMonth(d.getMonth()); setSelectedDay(d.getDate());
     }
   };
+
+  // 左右滑切換月／週，跟上下一期的按鈕共用同一組函式
+  // fade: false —— 月曆有 42 格，動畫 opacity 會讓整個子樹每幀重新合成，是這裡最大的成本
+  const calendarSwipe = useSwipePager({ onPrev: prevPeriod, onNext: nextPeriod, fade: false });
 
   const toggle = async (id: string) => {
     const event = events.find((e) => e.id === id);
@@ -307,7 +316,7 @@ export default function CalendarScreen({ navigation }: Props) {
   const selectedLabel = isSelectedToday ? '今天' : `${month + 1}月${selectedDay}日`;
 
   return (
-    <View style={[styles.container, { paddingBottom: insets.bottom }]}>
+    <View style={[styles.container, { paddingBottom: tabBarPad }]}>
       <AppBar
         avatarUrl={user.avatarUrl}
         userName={user.name}
@@ -357,6 +366,10 @@ export default function CalendarScreen({ navigation }: Props) {
             ))}
           </View>
 
+          {/* 月格與週條一起包在手勢容器裡：滑動時整塊跟著手指移動 */}
+          {/* 外層負責裁切且不動，內層才位移。裁切放在會動的那層等於白做 */}
+          <View style={calendarSwipe.clipStyle} {...calendarSwipe.panHandlers}>
+          <Animated.View style={calendarSwipe.animatedStyle} {...calendarSwipe.rasterProps}>
           {/* Month grid */}
           {viewMode === 'month' && (
             <View style={styles.dayGrid}>
@@ -444,6 +457,8 @@ export default function CalendarScreen({ navigation }: Props) {
               })}
             </View>
           )}
+          </Animated.View>
+          </View>
         </Card>
 
         {/* ── Pet color legend ────────────────────────────────── */}

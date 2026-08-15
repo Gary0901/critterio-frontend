@@ -6,6 +6,12 @@ export const FontFamily = {
   bodySemiBold: 'Quicksand_600SemiBold',
   bodyBold: 'Quicksand_700Bold',
   brand: 'Ole_400Regular',
+  /**
+   * 分享卡標語專用的中文字型（jf open 粉圓子集）。
+   * 只涵蓋固定標語會用到的字，**不能拿去排任何動態內容**——
+   * 使用者輸入的字不在子集裡，會整個變成空白或豆腐格。
+   */
+  taglineTC: 'CritterioTagline',
 };
 
 export const FontSize = {

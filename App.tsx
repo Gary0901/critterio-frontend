@@ -71,6 +71,10 @@ export default Sentry.wrap(function App() {
     Quicksand_600SemiBold,
     Quicksand_700Bold,
     Ole_400Regular,
+    // 分享卡標語專用。這是 jf open 粉圓子集化後的版本，只含標語那 12 個字（6KB）。
+    // 全字重繁中字型要 4.7MB，只為一句固定文案不值得——動態內容（寵物名、日記）
+    // 維持系統的蘋方即可。授權與更名要求見 assets/fonts/OFL.txt
+    CritterioTagline: require('./assets/fonts/CritterioTagline.ttf'),
   });
 
   return (

@@ -86,12 +86,17 @@ export default function VetVisitsScreen({ navigation, route }: Props) {
         text: '刪除', style: 'destructive',
         onPress: async () => {
           setDeletingId(visitId);
-          const res = await deleteVetVisit(petId, visitId);
-          setDeletingId(null);
-          if (res.success) {
-            setVisits((prev) => prev.filter((v) => v.id !== visitId));
-          } else {
-            Alert.alert('刪除失敗', res.message || '請稍後再試');
+          try {
+            const res = await deleteVetVisit(petId, visitId);
+            if (res.success) {
+              setVisits((prev) => prev.filter((v) => v.id !== visitId));
+            } else {
+              Alert.alert('刪除失敗', res.message || '請稍後再試');
+            }
+          } catch {
+            Alert.alert('刪除失敗', '網路錯誤，請稍後再試');
+          } finally {
+            setDeletingId(null);
           }
         },
       },
@@ -144,7 +149,14 @@ export default function VetVisitsScreen({ navigation, route }: Props) {
 
   // 檢查一次背景解析工作的狀態；ready/failed 回傳結果讓呼叫端決定要不要停止輪詢
   const checkParseJob = async (jobId: string): Promise<'ready' | 'failed' | 'processing'> => {
-    const res = await getVisitParseJob(petId, jobId);
+    // getVisitParseJob 走 axios，網路錯誤會直接拋。原本沒接的話 tick 的 promise 會 reject，
+    // setParsing(false) 不會執行、setInterval 也停不下來——畫面永遠停在解析中且持續打 API
+    let res;
+    try {
+      res = await getVisitParseJob(petId, jobId);
+    } catch {
+      return 'processing'; // 當成暫時失敗，下一輪再試
+    }
     if (!res.success) return 'processing'; // 網路暫時失敗，下一輪再試
     if (res.data.status === 'ready') {
       setDraft({ imageUrl: res.data.imageUrl, reportType: res.data.reportType, summaryAdvice: res.data.summaryAdvice });

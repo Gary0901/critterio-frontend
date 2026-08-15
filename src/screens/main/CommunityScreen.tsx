@@ -19,6 +19,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useFloatingTabBarPadding } from '../../constants/layout';
 import { MaterialIcons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import * as Clipboard from 'expo-clipboard';
@@ -299,6 +300,7 @@ export default function CommunityScreen({ navigation }: Props) {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const insets = useSafeAreaInsets();
+  const tabBarPad = useFloatingTabBarPadding();
   // 留言 sheet 的父層 KeyboardAvoidingView 沒有固定高度，百分比高度解析不出來，
   // 所以這裡要算成實際數值
   const { height: screenH } = useWindowDimensions();
@@ -604,18 +606,22 @@ export default function CommunityScreen({ navigation }: Props) {
     setCommentPostId(postId);
     if (commentsByPostId[postId]) return;
     setCommentsLoading(true);
-    const res = await getPostComments(postId);
-    setCommentsLoading(false);
-    if (res.success) {
-      setCommentsByPostId((prev) => ({
-        ...prev,
-        [postId]: res.data.map(mapApiComment),
-      }));
-      // 後端會濾掉封鎖對象的留言，計數以實際載入的則數為準，
-      // 否則卡片上的數字會比看得到的留言還多
-      setPosts((prev) =>
-        prev.map((p) => (p.id === postId ? { ...p, comments: res.data.length } : p)),
-      );
+    try {
+      const res = await getPostComments(postId);
+      if (res.success) {
+        setCommentsByPostId((prev) => ({
+          ...prev,
+          [postId]: res.data.map(mapApiComment),
+        }));
+        // 後端會濾掉封鎖對象的留言，計數以實際載入的則數為準，
+        // 否則卡片上的數字會比看得到的留言還多
+        setPosts((prev) =>
+          prev.map((p) => (p.id === postId ? { ...p, comments: res.data.length } : p)),
+        );
+      }
+    } finally {
+      // getPostComments 走 axios，網路錯誤會直接拋；不接的話留言區永遠轉圈
+      setCommentsLoading(false);
     }
   };
 
@@ -728,7 +734,7 @@ export default function CommunityScreen({ navigation }: Props) {
         ref={listRef}
         data={posts}
         keyExtractor={(item) => item.id}
-        contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}
+        contentContainerStyle={{ paddingBottom: tabBarPad + 24 }}
         showsVerticalScrollIndicator={false}
         onRefresh={onRefresh}
         refreshing={refreshing}
@@ -1106,7 +1112,8 @@ export default function CommunityScreen({ navigation }: Props) {
       {/* 發文入口。發文面板展開時收起來，避免蓋住表單 */}
       {!composing && (
         <TouchableOpacity
-          style={styles.composeFab}
+          // 分頁列是懸浮的，FAB 要自己讓開，否則整顆被膠囊蓋住
+          style={[styles.composeFab, { bottom: tabBarPad + 12 }]}
           onPress={() => setComposing(true)}
           activeOpacity={0.85}
           accessibilityRole="button"
@@ -1615,7 +1622,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   composeFab: {
     position: 'absolute',
     right: 20,
-    bottom: 24,
+    // bottom 由呼叫端依懸浮分頁列高度帶入
     width: 56,
     height: 56,
     borderRadius: 18,

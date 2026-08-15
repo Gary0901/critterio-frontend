@@ -9,10 +9,13 @@ import {
   ScrollView,
   TouchableOpacity,
   RefreshControl,
+  Image,
+  useWindowDimensions,
   Alert,
   Modal,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useFloatingTabBarPadding } from '../../constants/layout';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { MaterialIcons } from '@expo/vector-icons';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -20,14 +23,109 @@ import { RootStackParamList } from '../../types/navigation';
 import AppBar from '../../components/layout/AppBar';
 import PetCard from '../../components/pets/PetCard';
 import Card from '../../components/ui/Card';
+import Badge from '../../components/ui/Badge';
+import PetPhotoCarousel, { buildPetPhotos } from '../../components/pets/PetPhotoCarousel';
 import { ThemeColors } from '../../constants/themes';
 import { useTheme, useThemedStyles } from '../../context/ThemeContext';
 import { FontFamily, FontSize, LineHeight } from '../../constants/typography';
-import { getPets, deletePet as apiDeletePet, reorderPets as apiReorderPets, getEvents, getWeightLogs } from '../../api';
-import { Pet, PetStatus, Species } from '../../types';
+import { getPets, deletePet as apiDeletePet, reorderPets as apiReorderPets, getEvents, getWeightLogs, getDiaryEntries } from '../../api';
+import { Pet, PetStatus, Species, DiaryEntry } from '../../types';
 import { buildPetColorMap } from '../../constants/petColors';
 import { useUser } from '../../context/UserContext';
 import { useNotifications } from '../../context/NotificationContext';
+
+/**
+ * 只有一隻寵物時的展開卡片。
+ *
+ * 單寵使用者在列表頁看到的是「只有一個選項的選單」，每次都得再點一下才進得了檔案頁。
+ * 這張卡把當天真正要做的事直接攤開，讓分頁本身變成目的地而不是中繼站。
+ *
+ * 照片沿用今日日誌累積的相片（Pet 本身只有一張主照片），所以寫愈多日誌這裡愈豐富，
+ * 完全不用動後端。沒有任何日誌時自動退回單張主照片。
+ */
+function SinglePetCard({
+  pet, color, diaryEntries, todayStr, onOpenDetail, onOpenDiary, onMenuPress, styles, colors,
+}: {
+  pet: Pet;
+  color: string;
+  diaryEntries: DiaryEntry[];
+  todayStr: string;
+  onOpenDetail: () => void;
+  onOpenDiary: () => void;
+  onMenuPress: () => void;
+  styles: ReturnType<typeof makeStyles>;
+  colors: ThemeColors;
+}) {
+  const { width } = useWindowDimensions();
+  const photoW = width - 40; // 扣掉頁面左右各 20 的內距
+  const photos = buildPetPhotos(pet, diaryEntries);
+  const hasTodayEntry = diaryEntries.some((e) => e.date === todayStr);
+
+  return (
+    <Card style={styles.singleCard}>
+      <View style={styles.singlePhotoWrap}>
+        <PetPhotoCarousel
+          photos={photos}
+          width={photoW}
+          height={photoW * 0.75}
+          color={color}
+          placeholder={
+            <TouchableOpacity style={styles.singlePhotoEmpty} onPress={onOpenDetail} activeOpacity={0.85}>
+              <MaterialIcons name="add-a-photo" size={30} color={colors.outline} />
+              <Text style={styles.singlePhotoEmptyText}>幫 {pet.name} 加一張照片</Text>
+            </TouchableOpacity>
+          }
+        />
+
+        <TouchableOpacity style={styles.singleMenuBtn} onPress={onMenuPress} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+          <MaterialIcons name="more-horiz" size={20} color={colors.onSurface} />
+        </TouchableOpacity>
+      </View>
+
+      <View style={styles.singleHead}>
+        <View style={{ flex: 1 }}>
+          <View style={styles.singleNameRow}>
+            <Text style={styles.singleName}>{pet.name}</Text>
+            <Badge status={pet.status} label={pet.statusLabel} />
+          </View>
+          <Text style={styles.singleSub}>{pet.age} 歲 · {pet.breed}</Text>
+        </View>
+      </View>
+
+      {/* 今天要做的事 */}
+      <TouchableOpacity style={styles.singleAction} onPress={onOpenDiary} activeOpacity={0.75}>
+        <View style={[styles.singleActionIcon, hasTodayEntry && { backgroundColor: colors.secondaryContainer }]}>
+          <MaterialIcons
+            name={hasTodayEntry ? 'check-circle' : 'photo-camera'}
+            size={18}
+            color={hasTodayEntry ? colors.secondary : colors.primary}
+          />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.singleActionTitle}>
+            {hasTodayEntry ? '今日日誌已完成' : '今天還沒寫日誌'}
+          </Text>
+          <Text style={styles.singleActionSub}>
+            {hasTodayEntry ? `點開看看今天和 ${pet.name} 的回憶` : `記錄今天和 ${pet.name} 的精彩時刻`}
+          </Text>
+        </View>
+        <MaterialIcons name="chevron-right" size={22} color={colors.outlineVariant} />
+      </TouchableOpacity>
+
+      {!!pet.nextEvent && (
+        <View style={styles.singleNextEvent}>
+          <MaterialIcons name="event" size={15} color={colors.onSurfaceVariant} />
+          <Text style={styles.singleNextEventText}>{pet.nextEvent}</Text>
+        </View>
+      )}
+
+      <TouchableOpacity style={styles.singleDetailBtn} onPress={onOpenDetail} activeOpacity={0.85}>
+        <Text style={styles.singleDetailBtnLabel}>查看完整檔案</Text>
+        <MaterialIcons name="arrow-forward" size={16} color={colors.primary} />
+      </TouchableOpacity>
+    </Card>
+  );
+}
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList>;
@@ -54,6 +152,8 @@ export default function MyPetsScreen({ navigation }: Props) {
   const { colors, theme } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const insets = useSafeAreaInsets();
+  // 分頁列是懸浮的，內容要自己讓出它的高度
+  const tabBarPad = useFloatingTabBarPadding();
   const { user } = useUser();
   const { unreadCount } = useNotifications();
   const [pets, setPets] = useState<Pet[]>([]);
@@ -65,6 +165,23 @@ export default function MyPetsScreen({ navigation }: Props) {
 
   // AI banner 預設顯示，關掉後記在本機、不再出現。
   // null = 偏好還沒讀完：先不渲染，避免已關閉的使用者看到 banner 閃一下才消失
+  // 每隻寵物的日誌，用來組出可左右瀏覽的照片與「今天寫了沒」。
+  // 免費方案上限 3 隻，所以最多 3 次平行呼叫，不需要額外做批次 API
+  const [diaryByPet, setDiaryByPet] = useState<Record<string, DiaryEntry[]>>({});
+  const soloPet = pets.length === 1 ? pets[0] : null;
+  const petIdsKey = pets.map((p) => p.id).join(',');
+
+  useEffect(() => {
+    if (pets.length === 0) { setDiaryByPet({}); return; }
+    let cancelled = false;
+    Promise.all(
+      pets.map((p) => getDiaryEntries(p.id).then((res) => [p.id, res.success ? res.data : []] as const)),
+    ).then((pairs) => {
+      if (!cancelled) setDiaryByPet(Object.fromEntries(pairs));
+    });
+    return () => { cancelled = true; };
+  }, [petIdsKey]);
+
   const AI_BANNER_KEY = 'mypets_ai_banner_dismissed';
   const [aiBannerVisible, setAiBannerVisible] = useState<boolean | null>(null);
 
@@ -219,12 +336,16 @@ export default function MyPetsScreen({ navigation }: Props) {
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await load();
-    setRefreshing(false);
+    try {
+      // load() 內部沒有攔錯，getPets 拋出來會讓轉圈永遠停不下來
+      await load();
+    } finally {
+      setRefreshing(false);
+    }
   };
 
   return (
-    <View style={[styles.container, { paddingBottom: insets.bottom }]}>
+    <View style={[styles.container, { paddingBottom: tabBarPad }]}>
       <AppBar
         avatarUrl={user.avatarUrl}
         userName={user.name}
@@ -268,11 +389,31 @@ export default function MyPetsScreen({ navigation }: Props) {
             const displayPet = override
               ? { ...pet, status: override.status, statusLabel: override.statusLabel }
               : pet;
+
+            // 只有一隻時攤開成大卡，省掉「點一下才進得了檔案」那一跳
+            if (soloPet) {
+              return (
+                <SinglePetCard
+                  key={pet.id}
+                  pet={displayPet}
+                  color={petColorMap[pet.id]}
+                  diaryEntries={diaryByPet[pet.id] ?? []}
+                  todayStr={new Date().toISOString().split('T')[0]}
+                  onOpenDetail={() => navigation.navigate('PetDetail', { petId: pet.id })}
+                  onOpenDiary={() => navigation.navigate('DailyLog', { petId: pet.id, petName: pet.name, petColor: pet.color })}
+                  onMenuPress={() => setMenuPetId(pet.id)}
+                  styles={styles}
+                  colors={colors}
+                />
+              );
+            }
+
             return (
               <PetCard
                 key={pet.id}
                 pet={displayPet}
                 color={petColorMap[pet.id]}
+                diaryEntries={diaryByPet[pet.id]}
                 onPress={() => navigation.navigate('PetDetail', { petId: pet.id })}
                 onMenuPress={() => setMenuPetId(pet.id)}
               />
@@ -392,6 +533,89 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     color: c.onPrimaryContainer,
   },
   cards: { gap: 16, marginBottom: 24 },
+
+  // ── 單寵展開卡片 ──
+  singleCard: { padding: 0, overflow: 'hidden', gap: 0 },
+  // 只當定位容器：高度由輪播自己決定，這裡負責讓右上角的選單鍵疊上去
+  singlePhotoWrap: { position: 'relative' },
+  singlePhotoEmpty: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 8 },
+  singlePhotoEmptyText: {
+    fontFamily: FontFamily.bodyMedium,
+    fontSize: FontSize.labelMD,
+    color: c.onSurfaceVariant,
+  },
+  singleMenuBtn: {
+    position: 'absolute',
+    top: 10, right: 10,
+    width: 32, height: 32, borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.9)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  singleHead: { flexDirection: 'row', paddingHorizontal: 16, paddingTop: 14, paddingBottom: 10 },
+  singleNameRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  singleName: {
+    fontFamily: FontFamily.headlineBold,
+    fontSize: FontSize.headlineMD,
+    color: c.onSurface,
+  },
+  singleSub: {
+    fontFamily: FontFamily.bodyMedium,
+    fontSize: FontSize.labelMD,
+    color: c.onSurfaceVariant,
+    marginTop: 2,
+  },
+  singleAction: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginHorizontal: 16,
+    paddingVertical: 12,
+    borderTopWidth: 1,
+    borderTopColor: c.surfaceVariant,
+  },
+  singleActionIcon: {
+    width: 38, height: 38, borderRadius: 19,
+    backgroundColor: c.primaryFixed,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  singleActionTitle: {
+    fontFamily: FontFamily.headlineSemiBold,
+    fontSize: FontSize.labelMD,
+    color: c.onSurface,
+  },
+  singleActionSub: {
+    fontFamily: FontFamily.bodyMedium,
+    fontSize: FontSize.labelSM,
+    color: c.onSurfaceVariant,
+    marginTop: 1,
+  },
+  singleNextEvent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginHorizontal: 16,
+    paddingBottom: 12,
+  },
+  singleNextEventText: {
+    flex: 1,
+    fontFamily: FontFamily.bodyMedium,
+    fontSize: FontSize.labelSM,
+    color: c.onSurfaceVariant,
+  },
+  singleDetailBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 14,
+    borderTopWidth: 1,
+    borderTopColor: c.surfaceVariant,
+  },
+  singleDetailBtnLabel: {
+    fontFamily: FontFamily.headlineSemiBold,
+    fontSize: FontSize.labelMD,
+    color: c.primary,
+  },
   emptyCard: {
     alignItems: 'center',
     paddingVertical: 40,

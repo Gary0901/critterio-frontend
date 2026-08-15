@@ -1,7 +1,9 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
-  TextInput, ScrollView, Linking, ActivityIndicator, Image,
+  TextInput, ScrollView, Linking, ActivityIndicator, Image, PanResponder, Animated, Easing,
+  useWindowDimensions,
+  GestureResponderEvent, PanResponderGestureState,
 } from 'react-native';
 import * as Location from 'expo-location';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -54,6 +56,9 @@ const makeCategoryConfig = (c: ThemeColors): Record<PlaceCategory, {
   park:       { icon: 'local-florist',  label: '公園',   bgColor: c.catParkBg, iconColor: c.catPark },
   restaurant: { icon: 'restaurant',     label: '餐廳',   bgColor: c.catRestaurantBg, iconColor: c.warning },
 });
+
+/** 分類清單的快取存活時間。跟地圖頁一致 */
+const PLACES_CACHE_TTL_MS = 3 * 60 * 1000;
 
 const FILTERS: { key: FilterOption; label: string }[] = [
   { key: 'all',        label: '全部' },
@@ -246,6 +251,91 @@ export default function NearbyListScreen({ onSwitchToMap, favoriteIds, onToggleF
   const [search, setSearch] = useState('');
   const [activeFilter, setActiveFilter] = useState<FilterOption>('all');
   const [is24hrOnly, setIs24hrOnly] = useState(false);
+
+  // 分類結果的記憶體快取（比照地圖頁的作法）。沒有它的話左右來回切都在重打 API，
+  // 明明剛剛才看過的清單還是要再等一次網路
+  const placesCacheRef = useRef<Map<string, ListPlace[]>>(new Map());
+  // places 目前這份資料屬於哪個分類。跟 activeFilter 不一致就代表還在等新分類的結果，
+  // 這時要顯示載入中而不是把舊分類的清單掛在新分類底下
+  const placesFilterRef = useRef<FilterOption | null>(null);
+  const cacheTimeRef = useRef<Map<string, number>>(new Map());
+
+  // 翻頁位移。拖曳時即時跟著手指，放開後再決定要翻過去還是彈回來。
+  // 只播「放開後的固定動畫」不會有翻頁感——手指移動時畫面必須有反應
+  const dragX = useRef(new Animated.Value(0)).current;
+  const { width: screenW } = useWindowDimensions();
+  const screenWRef = useRef(screenW);
+  screenWRef.current = screenW;
+
+  // 左右滑切換分類。用內建 PanResponder 而不是 pager 套件——只是換一個字串狀態，
+  // 不需要真的把六份清單同時掛在畫面上。
+  // 用 Capture 版本才搶得贏底下的 FlatList，但條件收得很緊（水平位移要大於垂直的兩倍
+  // 且超過 24），確保垂直捲動完全不受影響。
+  const chipScrollRef = useRef<ScrollView>(null);
+  const chipXRef = useRef<Record<string, number>>({});
+
+  const selectFilter = (key: FilterOption) => {
+    setActiveFilter(key);
+    // 膠囊列跟著捲過去，否則滑了半天不知道現在在哪一類
+    const x = chipXRef.current[key];
+    if (x !== undefined) chipScrollRef.current?.scrollTo({ x: Math.max(0, x - 16), animated: true });
+  };
+
+  const settle = (toValue: number) =>
+    // 拖曳靠 dragX.setValue() 從 JS 更新，transform 就不能宣告成原生驅動——
+    // 同一個值被兩邊寫會每幀跨橋同步，反而更卡
+    Animated.spring(dragX, { toValue, useNativeDriver: false, bounciness: 0, speed: 14 });
+
+  /** 放開手：超過門檻就翻頁，否則彈回原位 */
+  const finishSwipe = (dx: number, vx: number) => {
+    const w = screenWRef.current;
+    const i = FILTERS.findIndex((f) => f.key === activeFilterRef.current);
+    // 位移過半、或甩得夠快，都算翻頁——只看位移的話快速輕甩會沒反應
+    const passed = Math.abs(dx) > w * 0.16 || Math.abs(vx) > 0.3;
+    const dir = dx < 0 ? 1 : -1;
+    const target = FILTERS[i + dir];
+
+    if (!passed || !target) {
+      settle(0).start();
+      return;
+    }
+    // 先把舊內容推出畫面，換完資料再從另一側彈進來
+    Animated.timing(dragX, {
+      toValue: -dir * w,
+      duration: 160,
+      easing: Easing.out(Easing.quad),
+      useNativeDriver: false,
+    }).start(() => {
+      selectFilterRef.current(target.key);
+      dragX.setValue(dir * w);
+      settle(0).start();
+    });
+  };
+
+  // PanResponder 只建立一次，閉包會抓到第一次 render 的值，用 ref 轉一手才拿得到最新的
+  const activeFilterRef = useRef(activeFilter);
+  activeFilterRef.current = activeFilter;
+  const selectFilterRef = useRef(selectFilter);
+  selectFilterRef.current = selectFilter;
+  const finishSwipeRef = useRef(finishSwipe);
+  finishSwipeRef.current = finishSwipe;
+
+  const swipeResponder = useRef(
+    PanResponder.create({
+      // 條件收緊，確保垂直捲清單不受影響
+      onMoveShouldSetPanResponderCapture: (_e: GestureResponderEvent, g: PanResponderGestureState) =>
+        Math.abs(g.dx) > 8 && Math.abs(g.dx) > Math.abs(g.dy) * 1.5,
+      onPanResponderMove: (_e: GestureResponderEvent, g: PanResponderGestureState) => {
+        const i = FILTERS.findIndex((f) => f.key === activeFilterRef.current);
+        const hasTarget = g.dx < 0 ? i < FILTERS.length - 1 : i > 0;
+        // 已經在頭尾時給阻尼，讓使用者感覺得到「沒有下一頁了」而不是完全不動
+        dragX.setValue(hasTarget ? g.dx : g.dx / 4);
+      },
+      onPanResponderRelease: (_e: GestureResponderEvent, g: PanResponderGestureState) =>
+        finishSwipeRef.current(g.dx, g.vx),
+      onPanResponderTerminate: () => settle(0).start(),
+    }),
+  ).current;
   const [exoticOnly, setExoticOnly] = useState(false);
   const [userLoc, setUserLoc] = useState<{ lat: number; lng: number } | null>(null);
 
@@ -293,9 +383,36 @@ export default function NearbyListScreen({ onSwitchToMap, favoriteIds, onToggleF
   useEffect(() => {
     if (!userLoc || activeFilter === 'favorites') return;
     let cancelled = false;
-    const isFirstLoad = places.length === 0;
-    if (isFirstLoad) setLoading(true); else setRefreshing(true);
     const apiType = FILTER_TO_API_TYPE[activeFilter];
+
+    // 位置取到小數第三位（約 100 公尺）就好——使用者小幅移動不該讓快取失效
+    const cacheKey = [
+      apiType ?? 'all',
+      is24hrOnly ? '1' : '0',
+      exoticOnly ? '1' : '0',
+      userLoc.lat.toFixed(3),
+      userLoc.lng.toFixed(3),
+    ].join('|');
+
+    const cached = placesCacheRef.current.get(cacheKey);
+    const cachedAt = cacheTimeRef.current.get(cacheKey) ?? 0;
+    if (cached && Date.now() - cachedAt < PLACES_CACHE_TTL_MS) {
+      setPlaces(cached);
+      placesFilterRef.current = activeFilter;
+      setLoading(false);
+      setRefreshing(false);
+      return; // 命中就完全不打 API，切換是即時的
+    }
+
+    // 換到別的分類但沒有快取：先清空並顯示載入中。
+    // 不清空的話新分類會先渲染舊分類的清單，等 API 回來才瞬間跳掉
+    const switchedFilter = placesFilterRef.current !== activeFilter;
+    if (switchedFilter) {
+      setPlaces([]);
+      setLoading(true);
+    } else {
+      setRefreshing(true);
+    }
     getNearbyPlaces(userLoc.lat, userLoc.lng, apiType, 20000, is24hrOnly, exoticOnly)
       .then((res) => {
         if (cancelled) return;
@@ -307,6 +424,9 @@ export default function NearbyListScreen({ onSwitchToMap, favoriteIds, onToggleF
             todayHours: todayHours(p.weekdayHours),
           }));
           mapped.sort(byPartnerThenDistance);
+          placesCacheRef.current.set(cacheKey, mapped);
+          cacheTimeRef.current.set(cacheKey, Date.now());
+          placesFilterRef.current = activeFilter;
           setPlaces(mapped);
         }
       })
@@ -317,12 +437,57 @@ export default function NearbyListScreen({ onSwitchToMap, favoriteIds, onToggleF
     return () => { cancelled = true; };
   }, [userLoc, activeFilter, is24hrOnly, exoticOnly]);
 
+  /**
+   * 預抓左右相鄰的分類。
+   * 有快取後「回到看過的分類」是即時的，但「第一次滑到某分類」還是要等網路。
+   * 使用者停在某一頁時，背景先把隔壁兩頁抓好，實際滑過去就幾乎都命中快取。
+   * 只寫進快取、不碰畫面狀態，所以不會干擾目前這一頁。
+   */
+  useEffect(() => {
+    if (!userLoc || activeFilter === 'favorites') return;
+    const i = FILTERS.findIndex((f) => f.key === activeFilter);
+    const neighbours = [FILTERS[i - 1], FILTERS[i + 1]].filter(
+      (f): f is typeof FILTERS[number] => !!f && f.key !== 'favorites',
+    );
+
+    const timer = setTimeout(() => {
+      for (const n of neighbours) {
+        const apiType = FILTER_TO_API_TYPE[n.key];
+        const key = [apiType ?? 'all', '0', '0', userLoc.lat.toFixed(3), userLoc.lng.toFixed(3)].join('|');
+        const at = cacheTimeRef.current.get(key) ?? 0;
+        if (Date.now() - at < PLACES_CACHE_TTL_MS) continue; // 已經有新鮮的快取
+
+        // 先佔位，避免同一輪重複發送
+        cacheTimeRef.current.set(key, Date.now());
+        getNearbyPlaces(userLoc.lat, userLoc.lng, apiType, 20000, false, false)
+          .then((res) => {
+            if (!res.success || !res.data) { cacheTimeRef.current.delete(key); return; }
+            const mapped: ListPlace[] = res.data.map((p) => ({
+              ...p,
+              category: (TYPE_TO_CATEGORY[p.type] ?? 'petstore') as PlaceCategory,
+              distanceM: haversineM(userLoc.lat, userLoc.lng, p.lat, p.lng),
+              todayHours: todayHours(p.weekdayHours),
+            }));
+            mapped.sort(byPartnerThenDistance);
+            placesCacheRef.current.set(key, mapped);
+          })
+          .catch(() => { cacheTimeRef.current.delete(key); });
+      }
+    }, 400); // 等目前這頁先載完，不要跟它搶頻寬
+
+    return () => clearTimeout(timer);
+  }, [userLoc, activeFilter]);
+
   // 切換到「最愛」時從 API 取完整收藏清單
   useEffect(() => {
     if (activeFilter !== 'favorites') return;
+    // 沒有 cancelled 守衛的話，快速滑過「最愛」時它的 finally 會在別的分類身上
+    // 把 loading 關掉（兩個 effect 都在寫同一個狀態），轉圈圈就會提早消失或殘留
+    let cancelled = false;
     setLoading(true);
     getMapFavorites()
       .then(res => {
+        if (cancelled) return;
         if (res.success) {
           const mapped: ListPlace[] = res.data.map(p => ({
             ...p,
@@ -336,7 +501,8 @@ export default function NearbyListScreen({ onSwitchToMap, favoriteIds, onToggleF
         }
       })
       .catch(() => {})
-      .finally(() => setLoading(false));
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
   }, [activeFilter]);
 
   function handleToggleFavorite(id: string) {
@@ -410,6 +576,7 @@ export default function NearbyListScreen({ onSwitchToMap, favoriteIds, onToggleF
 
       {/* 分類篩選 */}
       <ScrollView
+        ref={chipScrollRef}
         horizontal
         showsHorizontalScrollIndicator={false}
         style={styles.filterScroll}
@@ -419,26 +586,34 @@ export default function NearbyListScreen({ onSwitchToMap, favoriteIds, onToggleF
           const isActive = activeFilter === f.key;
           const isFavFilter = f.key === 'favorites';
           const cfg = (!isFavFilter && f.key !== 'all') ? makeCategoryConfig(colors)[f.key as PlaceCategory] : null;
+          // 選取時用該分類自己的顏色，跟地圖上的圖釘同一組色。
+          // 用 bgColor + iconColor 這個配對（淺色主題是淡底深字，深色主題自動反過來），
+          // 不能拿 iconColor 當實心底配白字——深色主題的 iconColor 是淡色，會看不見
+          const accent = isFavFilter ? colors.favorite : cfg ? cfg.iconColor : colors.primary;
+          const accentBg = isFavFilter ? colors.favoriteContainer : cfg ? cfg.bgColor : colors.primaryFixed;
           return (
             <TouchableOpacity
               key={f.key}
-              style={[styles.chip, isActive && styles.chipActive]}
-              onPress={() => setActiveFilter(f.key)}
+              style={[styles.chip, isActive && { backgroundColor: accentBg, borderColor: accent }]}
+              onLayout={(e) => { chipXRef.current[f.key] = e.nativeEvent.layout.x; }}
+              onPress={() => selectFilter(f.key)}
+              accessibilityRole="button"
+              accessibilityState={{ selected: isActive }}
             >
               {isFavFilter ? (
                 <MaterialIcons
                   name={isActive ? 'favorite' : 'favorite-border'}
                   size={16}
-                  color={isActive ? colors.onSecondary : colors.favorite}
+                  color={isActive ? accent : colors.favorite}
                 />
               ) : cfg ? (
                 <MaterialIcons
                   name={cfg.icon}
                   size={16}
-                  color={isActive ? colors.onSecondary : colors.onSurfaceVariant}
+                  color={isActive ? accent : colors.onSurfaceVariant}
                 />
               ) : null}
-              <Text style={[styles.chipText, isActive && styles.chipTextActive]}>
+              <Text style={[styles.chipText, isActive && [styles.chipTextActive, { color: accent }]]}>
                 {f.label}
               </Text>
             </TouchableOpacity>
@@ -497,14 +672,28 @@ export default function NearbyListScreen({ onSwitchToMap, favoriteIds, onToggleF
       )}
 
       {/* 列表 */}
-      {loading ? (
+      {/* 手勢容器一律渲染，載入中也要能繼續往下一頁滑——
+          原本 loading 時整塊連同手勢一起被換掉，等資料的期間完全滑不動 */}
+      <Animated.View
+        style={{
+          flex: 1,
+          transform: [{ translateX: dragX }],
+          // 推出去的過程順便淡出，換頁的分界比較清楚
+          opacity: dragX.interpolate({
+            inputRange: [-screenW, 0, screenW],
+            outputRange: [0.25, 1, 0.25],
+          }),
+        }}
+        {...swipeResponder.panHandlers}
+      >
+        {loading ? (
         <View style={styles.loadingWrap}>
           <ActivityIndicator size="large" color={colors.primary} />
           <Text style={styles.loadingText}>
             {activeFilter === 'favorites' ? '載入收藏清單...' : '載入附近地點...'}
           </Text>
         </View>
-      ) : (
+        ) : (
         <FlatList
           data={filtered}
           keyExtractor={(item) => item.id}
@@ -564,7 +753,8 @@ export default function NearbyListScreen({ onSwitchToMap, favoriteIds, onToggleF
             </View>
           }
         />
-      )}
+        )}
+      </Animated.View>
     </View>
   );
 }
@@ -603,7 +793,8 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
   },
   chipActive: { backgroundColor: c.secondary, borderColor: c.secondary },
   chipText: { fontFamily: FontFamily.headlineMedium, fontSize: FontSize.labelMD, color: c.onSurfaceVariant },
-  chipTextActive: { color: c.onSecondary, fontFamily: FontFamily.headlineBold },
+  // color 由呼叫端依分類帶入，這裡只管字重
+  chipTextActive: { fontFamily: FontFamily.headlineBold },
 
   noticeBanner: {
     flexDirection: 'row', alignItems: 'center', gap: 6,

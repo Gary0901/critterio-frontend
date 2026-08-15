@@ -9,6 +9,7 @@ interface AuthContextValue {
   login: (email: string, password: string) => Promise<void>;
   register: (name: string, email: string, password: string) => Promise<void>;
   loginWithGoogle: (idToken: string) => Promise<void>;
+  loginWithApple: (identityToken: string, fullName?: string) => Promise<void>;
   logout: () => Promise<void>;
   updateUser: (fields: Partial<User>) => void;
 }
@@ -80,6 +81,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(mapUser(u));
   }
 
+  // fullName 只有使用者「第一次授權這個 App」時 Apple 才會給，之後永遠是 null。
+  // 所以第一次拿到就要一起送給後端存起來，錯過就補不回來了。
+  async function loginWithApple(identityToken: string, fullName?: string) {
+    const res = await client.post('/auth/apple', { identityToken, fullName });
+    if (!res.data.success) throw new Error(res.data.message);
+    const { token, user: u } = res.data.data;
+    await SecureStore.setItemAsync(TOKEN_KEY, token);
+    setUser(mapUser(u));
+  }
+
   async function logout() {
     try { await client.post('/auth/logout'); } catch {}
     await SecureStore.deleteItemAsync(TOKEN_KEY);
@@ -91,7 +102,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, login, register, loginWithGoogle, logout, updateUser }}>
+    <AuthContext.Provider value={{ user, isLoading, login, register, loginWithGoogle, loginWithApple, logout, updateUser }}>
       {children}
     </AuthContext.Provider>
   );

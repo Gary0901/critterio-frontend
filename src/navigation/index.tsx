@@ -3,6 +3,12 @@ import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'rea
 import { DarkTheme, DefaultTheme, LinkingOptions, NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { BlurView } from 'expo-blur';
+import {
+  TAB_ITEM_HEIGHT,
+  TAB_PILL_V_PADDING,
+  TAB_WRAP_V_PADDING,
+} from '../constants/layout';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
@@ -71,12 +77,26 @@ const TAB_CONFIG: Record<
 };
 
 function CustomTabBar({ state, navigation }: any) {
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const insets = useSafeAreaInsets();
 
   return (
-    <View style={[styles.tabBar, { paddingBottom: insets.bottom + 4 }]}>
+    // 絕對定位浮在內容上方。毛玻璃要有東西可以模糊，就必須讓內容從底下穿過去——
+    // 若分頁列仍佔版面高度，底下只是一片純色背景，blur 等於白做。
+    // 代價是各分頁畫面要自己補底部留白，見 useFloatingTabBarPadding()
+    <View
+      style={[styles.tabBarWrap, { paddingBottom: insets.bottom + 6 }]}
+      pointerEvents="box-none"
+    >
+      <View style={styles.tabPill}>
+        <BlurView
+          intensity={80}
+          tint={isDark ? 'systemThickMaterialDark' : 'systemThickMaterialLight'}
+          style={StyleSheet.absoluteFill}
+        />
+        {/* 疊一層品牌色薄膜：純毛玻璃會完全跟著背景走，加這層才維持得住 App 的調性 */}
+        <View style={styles.tabPillTint} pointerEvents="none" />
       {state.routes.map((route: any, index: number) => {
         const cfg = TAB_CONFIG[route.name as keyof MainTabParamList];
         const isFocused = state.index === index;
@@ -124,17 +144,21 @@ function CustomTabBar({ state, navigation }: any) {
             onPress={onPress}
             activeOpacity={0.75}
           >
-            <MaterialIcons
-              name={isFocused ? cfg.iconActive : cfg.icon}
-              size={24}
-              color={isFocused ? colors.primary : colors.outline}
-            />
+            {/* 選中的分頁底下墊一顆膠囊，跟 IG 一樣用形狀而不只是顏色標示位置 */}
+            <View style={[styles.tabIconWrap, isFocused && styles.tabIconWrapActive]}>
+              <MaterialIcons
+                name={isFocused ? cfg.iconActive : cfg.icon}
+                size={24}
+                color={isFocused ? colors.primary : colors.outline}
+              />
+            </View>
             <Text style={[styles.tabLabel, isFocused && styles.tabLabelActive]}>
               {cfg.label}
             </Text>
           </TouchableOpacity>
         );
       })}
+      </View>
     </View>
   );
 }
@@ -302,32 +326,69 @@ export default function AppNavigation() {
 }
 
 const makeStyles = (c: ThemeColors) => StyleSheet.create({
-  tabBar: {
+  // 絕對定位的容器，浮在內容上方且不吃觸控（box-none 讓空白處的手勢傳給底下的畫面）
+  tabBarWrap: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    paddingTop: TAB_WRAP_V_PADDING,
+    paddingHorizontal: 12,
+    backgroundColor: 'transparent',
+  },
+  // 真正看得到的懸浮膠囊。背景交給 BlurView，這裡只負責形狀與陰影
+  tabPill: {
     flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 28,
+    paddingVertical: TAB_PILL_V_PADDING,
+    paddingHorizontal: 6,
+    // overflow 必須有，否則 BlurView 會是方形、蓋掉圓角
+    overflow: 'hidden',
+    // 細微的亮色內框，模擬玻璃邊緣的高光
+    borderWidth: 1,
+    borderColor: c.surfaceVariant,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.14,
+    shadowRadius: 18,
+    elevation: 8,
+  },
+  tabPillTint: {
+    position: 'absolute',
+    top: 0, left: 0, right: 0, bottom: 0,
     backgroundColor: c.surfaceContainerLowest,
-    borderTopWidth: 1,
-    borderTopColor: c.surfaceVariant,
-    paddingTop: 8,
-    paddingHorizontal: 8,
+    opacity: 0.55,
   },
   tabItem: {
     flex: 1,
+    height: TAB_ITEM_HEIGHT,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 4,
+    gap: 2,
+  },
+  tabIconWrap: {
+    paddingHorizontal: 14,
     paddingVertical: 4,
+    borderRadius: 9999,
+  },
+  tabIconWrapActive: {
+    backgroundColor: c.primaryFixed,
   },
   tabItemCenter: {
     flex: 1,
+    height: TAB_ITEM_HEIGHT,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 4,
+    gap: 2,
   },
+  // 未選中時用中性色。原本是 primaryFixed，跟 tabIconWrapActive 同色，
+  // 導致「沒被選中的 AI 助理」看起來跟「被選中的分頁」一模一樣
   centerPill: {
     width: 52,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: c.primaryFixed,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: c.surfaceContainerHigh,
     alignItems: 'center',
     justifyContent: 'center',
   },

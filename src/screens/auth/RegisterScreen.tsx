@@ -16,6 +16,7 @@ import Constants from 'expo-constants';
 import { RootStackParamList } from '../../types/navigation';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
+import AppleSignInButton from '../../components/auth/AppleSignInButton';
 import { ThemeColors } from '../../constants/themes';
 import { useTheme, useThemedStyles } from '../../context/ThemeContext';
 import { FontFamily, FontSize } from '../../constants/typography';
@@ -189,16 +190,17 @@ export default function RegisterScreen({ navigation }: Props) {
             <View style={styles.line} />
           </View>
 
-          <View style={styles.socialRow}>
+          {/* 改為直向排列：Apple 原生按鈕的文案較長，半寬會擠；
+              Apple 的規範也要求它的顯著程度不低於其他第三方登入方式 */}
+          <View style={styles.socialCol}>
             <Button
-              label="Google"
+              label="使用 Google 註冊"
               variant="outline"
               loading={googleLoading}
               disabled={!googleRequest}
               onPress={() => promptGoogleAsync()}
-              style={styles.socialBtn}
             />
-            <Button label="Apple" variant="outline" disabled onPress={() => {}} style={styles.socialBtn} />
+            <AppleSignInButton type="signUp" onError={(m) => setError(m)} />
           </View>
         </View>
 
@@ -299,8 +301,7 @@ const makeStyles = (c: ThemeColors) => StyleSheet.create({
     fontSize: FontSize.labelSM,
     color: c.onSurfaceVariant,
   },
-  socialRow: { flexDirection: 'row', gap: 12 },
-  socialBtn: { flex: 1 },
+  socialCol: { gap: 12 },
   loginRow: { flexDirection: 'row' },
   loginText: {
     fontFamily: FontFamily.bodyMedium,

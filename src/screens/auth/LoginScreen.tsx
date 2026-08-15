@@ -15,6 +15,7 @@ import Constants from 'expo-constants';
 import { RootStackParamList } from '../../types/navigation';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
+import AppleSignInButton from '../../components/auth/AppleSignInButton';
 import { ThemeColors } from '../../constants/themes';
 import { useThemedStyles } from '../../context/ThemeContext';
 import { FontFamily, FontSize } from '../../constants/typography';
@@ -133,12 +134,7 @@ export default function LoginScreen({ navigation }: Props) {
             disabled={!googleRequest}
             onPress={() => promptGoogleAsync()}
           />
-          <Button
-            label="使用 Apple 繼續（即將推出）"
-            variant="outline"
-            disabled
-            onPress={() => {}}
-          />
+          <AppleSignInButton onError={(m) => setError(m)} />
         </View>
 
         {/* Sign up link */}

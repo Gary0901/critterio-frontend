@@ -133,13 +133,20 @@ export default function ProfileScreen({ navigation }: Props) {
           style: 'destructive',
           onPress: async () => {
             setDeletingPost(true);
-            const res = await apiDeletePost(postId);
-            setDeletingPost(false);
-            if (res.success) {
-              setMyPosts((prev) => prev.filter((p) => p.id !== postId));
-              closeModal();
-            } else {
-              Alert.alert('刪除失敗', '請稍後再試');
+            try {
+              const res = await apiDeletePost(postId);
+              if (res.success) {
+                setMyPosts((prev) => prev.filter((p) => p.id !== postId));
+                closeModal();
+              } else {
+                Alert.alert('刪除失敗', res.message || '請稍後再試');
+              }
+            } catch {
+            // api 層用 axios，網路錯誤與非 2xx 都會直接拋出來（包裝函式沒有攔）。
+            // 不接的話旗標永遠停在 true，按鈕會卡在停用狀態、使用者只能重開 App
+              Alert.alert('刪除失敗', '網路錯誤，請稍後再試');
+            } finally {
+              setDeletingPost(false);
             }
           },
         },
